@@ -1,0 +1,47 @@
+/**
+*  Group Contact (v.0.0.1)
+*
+*  Authors
+*   - clipman@naver.com
+*  Copyright 2021
+*
+*  Licensed under the Apache License, Version 2.0 (the "License"); you may not use this file except
+*  in compliance with the License. You may obtain a copy of the License at:
+*
+*  http://www.apache.org/licenses/LICENSE-2.0
+*
+*  Unless required by applicable law or agreed to in writing, software distributed under the License is distributed
+*  on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the License
+*  for the specific language governing permissions and limitations under the License.
+*/
+
+metadata {
+	definition (name: "Group Contact", namespace: "clipman", author: "clipman", ocfDeviceType: "x.com.st.d.sensor.multifunction", 
+		mnmn: "SmartThingsCommunity", vid: "d33a9a5c-e1f6-359b-9706-7d8fed07f9be") {
+
+		capability "Contact Sensor"
+		capability "circlecircle06391.contact"
+	}
+}
+
+def setContactStatus(String status) {
+	sendEvent(name: "contactStatus", value: status, displayed: "false")
+}
+
+def setContactDisplay(String display) {
+	sendEvent(name: "contactDisplay", value: display, displayed: "true")
+}
+
+def open() {
+	sendEvent(name: "contact", value: "open")
+}
+
+def close() {
+	sendEvent(name: "contact", value: "closed")
+}
+
+def installed() {
+	sendEvent(name: "contactStatus", value: "닫힘", displayed: "false")
+	sendEvent(name: "contactDisplay", value: "닫힘", displayed: "false")
+	close()
+}
