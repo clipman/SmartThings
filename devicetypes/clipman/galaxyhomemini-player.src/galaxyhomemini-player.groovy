@@ -53,37 +53,6 @@ metadata {
 		input name: "galaxyHomeID", type: "text", title: "Device ID of Galaxy Home Mini", required: false
 		input name: "token", type: "text", title: "Token", required: false
 	}
-
-	tiles(scale: 2) {
-		multiAttributeTile(name: "main", type:"mediaPlayer", width:6, height:4, canChangeIcon: true) {
-			tileAttribute("device.status", key: "PRIMARY_CONTROL") {
-				attributeState("paused", label:"Paused",)
-				attributeState("playing", label:"Playing")
-				attributeState("stopped", label:"Stopped")
-			}
-			tileAttribute("device.status", key: "MEDIA_STATUS") {
-				attributeState("paused", label:"Paused", action:"play", nextState: "playing")
-				attributeState("playing", label:"Playing", action:"pause", nextState: "paused")
-				attributeState("stopped", label:"Stopped", action:"play", nextState: "playing")
-			}
-			tileAttribute("device.status", key: "PREVIOUS_TRACK") {
-				attributeState("default", action:"previousTrack", defaultState: true)
-			}
-			tileAttribute("device.status", key: "NEXT_TRACK") {
-				attributeState("default", action:"nextTrack", defaultState: true)
-			}
-			tileAttribute ("device.level", key: "SLIDER_CONTROL") {
-				attributeState("level", action:"setLevel")
-			}
-			tileAttribute ("device.mute", key: "MEDIA_MUTED") {
-				attributeState("unmuted", action:"mute", nextState: "muted")
-				attributeState("muted", action:"unmute", nextState: "unmuted")
-			}
-			tileAttribute("device.trackDescription", key: "MARQUEE") {
-				attributeState("default", label:"${currentValue}", defaultState: true)
-			}
-		}
-	}
 }
 
 // parse events into attributes
