@@ -79,7 +79,7 @@ def ping() {
 def pingCallback(physicalgraph.device.HubResponse hubResponse) {
 	log.debug("Device is now online")
 	unschedule(pingTimeout)
-    state.switch = "on"
+	state.switch = "on"
 	sendEvent(name: "switch", value: "on", displayed: true)
 }
 
