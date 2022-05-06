@@ -321,15 +321,13 @@ private estimateLux(obs, sunriseDate, sunsetDate) {
 			case '04':
 				lux = 200
 				break
-			case ['05', '06', '07', '08', '09', '10',
-				  '11', '12', '13','14', '15','17','18','19','20',
-				  '21','22','23','24','25','26']:
+			case ['05','06','07','08','09','10','11','12','13','14','15','16','17','18','19','20','21','22','23','24','25','26']:
 				lux = 1000
 				break
-			case ['27', '28']:
+			case ['27','28']:
 				lux = 2500
 				break
-			case ['29', '30']:
+			case ['29','30']:
 				lux = 7500
 				break
 			default:
@@ -348,11 +346,11 @@ private estimateLux(obs, sunriseDate, sunsetDate) {
 			//dusk
 			lux = (long)(lux * (beforeSunset/oneHour))
 		}
-		if(lux < 10) lux = 10		// obs.dayOrNight이 늦게 변경되는 경우가 있음
+		if(lux < 1) lux = 1	// obs.dayOrNight이 늦게 변경되는 경우가 있음
 	} else {
 		//night - always set to 10 for now
 		//could do calculations for dusk/dawn too
-		lux = 10
+		lux = 1
 	}
 	return lux
 }
