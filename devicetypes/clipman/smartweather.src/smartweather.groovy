@@ -1,11 +1,12 @@
 /**
- *	SmartWeather v2022-04-17
+ *	SmartWeather v2022-05-08
  *	clipman@naver.com
+ *  날자
  *
  *	Licensed under the Apache License, Version 2.0 (the "License"); you may not use this file except
  *	in compliance with the License. You may obtain a copy of the License at:
  *
- *	http://www.apache.org/licenses/LICENSE-2.0
+ *	  http://www.apache.org/licenses/LICENSE-2.0
  *
  *	Unless required by applicable law or agreed to in writing, software distributed under the License is distributed
  *	on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the License
@@ -53,8 +54,8 @@ metadata {
 	}
 	preferences {
 		input "accessKey", "text", type: "password", title: "AirKorea API Key", required: true
-		input "stationName", "text", title: "Station name", description: "측청소 이름", defaultValue: "청라", required: true
-		input "subStationName", "text", title: "Sub station name", description: "예비측청소 이름", defaultValue: "중봉", required: true
+		input "stationName", "text", title: "측청소 이름", defaultValue: "청라", required: true
+		input "subStationName", "text", title: "예비측청소 이름", defaultValue: "중봉", required: true
 
 		input "status_1", "enum", title: "Select a status1", required: true, options: ["온도", "습도", "미세먼지", "미세먼지등급", "초미세먼지", "초미세먼지등급", "공기질", "날씨", "비올확율", "체감온도", "최저온도", "최고온도", "풍속", "풍향", "기압", "기압변화", "밝기", "시계", "일출", "일몰", "월출", "월몰", "달의일수"], defaultValue: "온도"
 		input "status_2", "enum", title: "Select a status2", required: true, options: ["온도", "습도", "미세먼지", "미세먼지등급", "초미세먼지", "초미세먼지등급", "공기질", "날씨", "비올확율", "체감온도", "최저온도", "최고온도", "풍속", "풍향", "기압", "기압변화", "밝기", "시계", "일출", "일몰", "월출", "월몰", "달의일수", "표시안함"], defaultValue: "습도"
@@ -65,10 +66,14 @@ metadata {
 		input type: "paragraph", element: "paragraph", title: "AirKorea API Key", description: " https://www.data.go.kr/data/15073861/openapi.do<br> 위 사이트에서 활용신청하고 API Key를 발급 받으세요.", displayDuringSetup: false
 		input type: "paragraph", element: "paragraph", title: "측정소 조회 방법", description: " 브라우저 통해 원하시는 지역을 검색하세요.<br> http://www.airkorea.or.kr/web/realSearch", displayDuringSetup: false
 		input type: "paragraph", element: "paragraph", title: "만든이", description: "김민수 clipman@naver.com [날자]", displayDuringSetup: false
+
+		input type: "paragraph", element: "paragraph", title: "HomeAssistant 설정", description: "https://xxx.duckdns.org 또는 http://xxx.duckdns.org:8123", displayDuringSetup: false
+		input "haURL", "text", title: "HomeAssistant URL", required: false
+		input "haToken", "text", title: "HomeAssistant Token", required: false
 	}
 }
 
-def statusbar(){
+def statusbar() {
 	def statusMap = ["온도":"temperature", "습도":"humidity", "미세먼지":"dustLevel", "미세먼지등급":"dustClass", "초미세먼지":"fineDustLevel", "초미세먼지등급":"fineDustClass", "공기질":"airClass", "날씨":"weatherForecast", "비올확율":"precipChance", "체감온도":"temperatureFeel", "최저온도":"temperatureMin", "최고온도":"temperatureMax", "풍속":"windSpeed", "풍향":"windBearing", "기압":"pressure", "기압변화":"pressureTrend", "밝기":"illuminance", "시계":"visibility", "일출":"sunrise", "일몰":"sunset", "월출":"moonrise", "월몰":"moonset", "달의일수":"moonDay"]
 	if(settings.status_1 == null || settings.status_1 == "") settings.status_1 = "온도"
 	if(settings.status_2 == null || settings.status_2 == "") settings.status_2 = "습도"
@@ -85,7 +90,7 @@ def statusbar(){
 	sendEvent(name: "statusbar", value: status, displayed: false)
 }
 
-def getUnit(attributes){
+def getUnit(attributes) {
 	if(attributes == "온도") return "°C"
 	if(attributes == "체감온도") return "°C"
 	if(attributes == "최저온도") return "°C"
@@ -101,7 +106,7 @@ def getUnit(attributes){
 	return ""
 }
 
-def setStatusbar(String status){
+def setStatusbar(String status) {
 	sendEvent(name: "statusbar", value: status, displayed: false)
 }
 
@@ -236,6 +241,9 @@ def airKorea(stationName) {
 		//log.debug "Missing data from the device settings station name or access key"
 	}
 	statusbar()
+	if(settings.haURL && settings.haToken) {
+		publishDevice()
+	}
 }
 
 def pollWeather() {
@@ -318,6 +326,9 @@ def pollWeather() {
 		//log.warn "No response from TWC API"
 	}
 	statusbar()
+	if(settings.haURL && settings.haToken) {
+		publishDevice()
+	}
 }
 
 private estimateLux(obs, sunriseDate, sunsetDate) {
@@ -389,8 +400,7 @@ private createCityName(location) {
 			cityName += location.country
 		}
 	}
-
-	cityName
+	return cityName
 }
 
 private fixScale(scale) {
@@ -400,5 +410,64 @@ private fixScale(scale) {
 			return "metric"
 		default:
 			return "imperial"
+	}
+}
+
+def publishDevice() {
+	def data = [:]
+	data["name"] = device.name
+	data["airQuality"] = device.currentValue("airQuality")
+	data["dustLevel"] = device.currentValue("dustLevel")
+	data["fineDustLevel"] = device.currentValue("fineDustLevel")
+	data["temperature"] = device.currentValue("temperature")
+	data["humidity"] = device.currentValue("humidity")
+	data["ultravioletIndex"] = device.currentValue("ultravioletIndex")
+	data["illuminance"] = device.currentValue("illuminance")
+	data["dustClass"] = device.currentValue("dustClass")
+	data["fineDustClass"] = device.currentValue("fineDustClass")
+	data["windSpeed"] = device.currentValue("windSpeed")
+	data["windBearing"] = device.currentValue("windBearing")
+	data["temperatureFeel"] = device.currentValue("temperatureFeel")
+	data["temperatureMin"] = device.currentValue("temperatureMin")
+	data["temperatureMax"] = device.currentValue("temperatureMax")
+	data["weatherForecast"] = device.currentValue("weatherForecast")
+	data["ozonLevel"] = device.currentValue("ozonLevel")
+	data["ozonClass"] = device.currentValue("ozonClass")
+	data["ultravioletClass"] = device.currentValue("ultravioletClass")
+	data["locationInfo"] = device.currentValue("locationInfo")
+	data["precipChance"] = device.currentValue("precipChance")
+	data["airClass"] = device.currentValue("airClass")
+	data["pressure"] = device.currentValue("pressure")
+	data["pressureTrend"] = device.currentValue("pressureTrend")
+	data["visibility"] = device.currentValue("visibility")
+	data["sunrise"] = device.currentValue("sunrise")
+	data["sunset"] = device.currentValue("sunset")
+	data["moonrise"] = device.currentValue("moonrise")
+	data["moonset"] = device.currentValue("moonset")
+	data["moonDay"] = device.currentValue("moonDay")
+	data["statusbar"] = device.currentValue("statusbar")
+	data["status"] = device.currentValue("status")
+	data["update"] = new Date().format("yyyy-MM-dd HH:mm:ss", location.timeZone)
+
+	def payload = new groovy.json.JsonOutput().toJson(data)
+	services("/api/services/mqtt/publish", ["topic": "smartthings/"+device.deviceNetworkId, "payload": "'" + payload.toString() + "'"])
+	log.debug "publishDevice: ${device.deviceNetworkId}/, " + payload.toString()
+}
+
+def services(service, data) {
+	def params = [
+		uri: settings.haURL,
+		path: service,
+		headers: ["Authorization": "Bearer " + settings.haToken],
+		requestContentType: "application/json",
+		body: data
+	]
+	try {
+		httpPost(params) { resp ->
+			return true
+		}
+	} catch (e) {
+		log.error "HomeAssistant Services({$service}) Error: $e"
+		return false
 	}
 }
