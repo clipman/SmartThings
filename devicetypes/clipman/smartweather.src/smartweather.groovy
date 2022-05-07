@@ -54,6 +54,7 @@ metadata {
 	preferences {
 		input "accessKey", "text", type: "password", title: "AirKorea API Key", required: true
 		input "stationName", "text", title: "Station name", description: "측청소 이름", defaultValue: "청라", required: true
+		input "subStationName", "text", title: "Sub station name", description: "예비측청소 이름", defaultValue: "중봉", required: true
 
 		input "status_1", "enum", title: "Select a status1", required: true, options: ["온도", "습도", "미세먼지", "미세먼지등급", "초미세먼지", "초미세먼지등급", "공기질", "날씨", "비올확율", "체감온도", "최저온도", "최고온도", "풍속", "풍향", "기압", "기압변화", "밝기", "시계", "일출", "일몰", "월출", "월몰", "달의일수"], defaultValue: "온도"
 		input "status_2", "enum", title: "Select a status2", required: true, options: ["온도", "습도", "미세먼지", "미세먼지등급", "초미세먼지", "초미세먼지등급", "공기질", "날씨", "비올확율", "체감온도", "최저온도", "최고온도", "풍속", "풍향", "기압", "기압변화", "밝기", "시계", "일출", "일몰", "월출", "월몰", "달의일수", "표시안함"], defaultValue: "습도"
@@ -128,11 +129,18 @@ def refresh() {
 }
 
 def pollAirKorea() {
+	airKorea(settings.stationName)
+	if(settings.subStationName && device.currentValue("dustLevel") == 0 && device.currentValue("fineDustLevel") == 0) {
+		airKorea(settings.subStationName)
+	}
+}
+
+def airKorea(stationName) {
 	//log.debug "pollAirKorea()"
-	if (settings.stationName && settings.accessKey) {
+	if (stationName && settings.accessKey) {
 		def accessKey_encode = URLEncoder.encode(URLDecoder.decode(settings.accessKey.toString(), "UTF-8"), "UTF-8").replace("+", "%2B");
 		def params = [
-			uri: "http://apis.data.go.kr/B552584/ArpltnInforInqireSvc/getMsrstnAcctoRltmMesureDnsty?stationName=${settings.stationName}&dataTerm=DAILY&pageNo=1&numOfRows=1&ServiceKey=${accessKey_encode}&ver=1.3&returnType=json",
+			uri: "http://apis.data.go.kr/B552584/ArpltnInforInqireSvc/getMsrstnAcctoRltmMesureDnsty?stationName=${stationName}&dataTerm=DAILY&pageNo=1&numOfRows=1&ServiceKey=${accessKey_encode}&ver=1.3&returnType=json",
 			contentType: 'application/json'
 		]
 
@@ -208,19 +216,19 @@ def pollAirKorea() {
 						sendEvent(name: "ozonClass", value: "모름")
 					}
 
-					sendEvent(name: "status", value: settings.stationName + ", 측정 시간: " + resp.data.response.body.items[0].dataTime)
+					sendEvent(name: "status", value: stationName + ", 측정 시간: " + resp.data.response.body.items[0].dataTime)
 				} else if (resp.status == 429) {
-					sendEvent(name: "status", value: settings.stationName + ", 최대조회수 초과")
+					sendEvent(name: "status", value: stationName + ", 최대조회수 초과")
 				} else if (resp.status == 500) {
-					sendEvent(name: "status", value: settings.stationName + ", 서버에러")
+					sendEvent(name: "status", value: stationName + ", 서버에러")
 				} else {
-					sendEvent(name: "status", value: settings.stationName + ", Error: " + resp.status)
+					sendEvent(name: "status", value: stationName + ", Error: " + resp.status)
 				}
 			}
 		} catch (e) {
 			sendEvent(name: "ozonLevel", value: 0, unit: "ppm")
 			sendEvent(name: "ozonClass", value: "모름")
-			sendEvent(name: "status", value: settings.stationName + ", " + currentStatus)
+			sendEvent(name: "status", value: stationName + ", " + currentStatus)
 			log.debug "uri: ${params.uri}"
 		}
 	}
