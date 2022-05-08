@@ -49,6 +49,10 @@ metadata {
 		capability "circlecircle06391.statusBar"			//status
 		capability "Refresh"
 
+		attribute "weatherIcon", "String"
+		attribute "forecastIcon", "String"
+		attribute "station", "String"
+
 		command "pollAirKorea"
 		command "pollWeather"
 	}
@@ -240,6 +244,7 @@ def airKorea(stationName) {
 	else {
 		//log.debug "Missing data from the device settings station name or access key"
 	}
+	sendEvent(name: "station", value: stationName, displayed: false)
 	statusbar()
 	if(settings.haURL && settings.haToken) {
 		publishDevice()
@@ -251,9 +256,14 @@ def pollWeather() {
 	def tempUnits = getTemperatureScale()
 	def obs = getTwcConditions()
 	if (obs) {
+		if((obs.iconCode as int) < 10) {
+			sendEvent(name: "weatherIcon", value: "https://smartthings-twc-icons.s3.amazonaws.com/0" + obs.iconCode + ".png", displayed: false)
+		} else {
+			sendEvent(name: "weatherIcon", value: "https://smartthings-twc-icons.s3.amazonaws.com/" + obs.iconCode + ".png", displayed: false)
+		}
+
 		sendEvent(name: "temperature", value: obs.temperature, unit: tempUnits)
 		sendEvent(name: "temperatureFeel", value: obs.temperatureFeelsLike, unit: tempUnits)
-
 		sendEvent(name: "humidity", value: obs.relativeHumidity, unit: "%")
 		def weatherForecast = obs.wxPhraseMedium
 		weatherForecast = weatherForecast.replace("Sunny","맑음").replace("Clear","맑음").replace("Fair","맑음").replace("Cloudy","흐림").replace("Rain Shower","소나기")
@@ -271,7 +281,7 @@ def pollWeather() {
 		sendEvent(name: "pressureTrend", value: pressureTendencyTrend)
 
 		def windBearing = obs.windDirectionCardinal
-		windBearing = windBearing.replace("E","동").replace("W","서").replace("S","남").replace("N","북").replace("CALM","없음")
+		windBearing = windBearing.replace("E","동").replace("W","서").replace("S","남").replace("N","북").replace("CALM","무")
 		sendEvent(name: "windBearing", value: windBearing)
 
 		def loc = getTwcLocation()?.location
@@ -305,6 +315,13 @@ def pollWeather() {
 		// Forecast
 		def f = getTwcForecast()
 		if (f) {
+			def icon = f.daypart[0].iconCode[0] != null ? f.daypart[0].iconCode[0] : f.daypart[0].iconCode[1]
+			if((icon as int) < 10) {
+				sendEvent(name: "forecastIcon", value: "https://smartthings-twc-icons.s3.amazonaws.com/0" + icon + ".png", displayed: false)
+			} else {
+				sendEvent(name: "forecastIcon", value: "https://smartthings-twc-icons.s3.amazonaws.com/" + icon + ".png", displayed: false)
+			}
+
 			def precipChance = f.daypart[0].precipChance[0] != null ? f.daypart[0].precipChance[0] : f.daypart[0].precipChance[1]
 			sendEvent(name: "precipChance", value: precipChance as int, unit: "%")
 			def temperatureMin = f.temperatureMin[0] != null ? f.temperatureMin[0] : f.temperatureMin[1]
@@ -333,32 +350,35 @@ def pollWeather() {
 
 private estimateLux(obs, sunriseDate, sunsetDate) {
 	def lux = 0
-	def now = new Date().time
-
-	if(obs.dayOrNight != 'N') {
+	if (obs.dayOrNight == 'N') {
+		lux = 1
+	} else {
+		//day
 		switch(obs.iconCode) {
-			case '04':
-				lux = 200
-				break
-			case ['05','06','07','08','09','10','11','12','13','14','15','16','17','18','19','20','21','22','23','24','25','26']:
-				lux = 1000
-				break
-			case ['27','28']:
-				lux = 2500
-				break
-			case ['29','30']:
-				lux = 7500
-				break
-			default:
-				//sunny, clear
-				lux = 10000
+		case 4:
+			lux = 200
+			break
+		case 5..26:
+			lux = 1000
+			break
+		case 27..28:
+			lux = 2500
+			break
+		case 29..30:
+			lux = 7500
+			break
+		default:
+			//sunny, clear
+			lux = 10000
 		}
+
 		//adjust for dusk/dawn
+		def now = new Date().time
 		def afterSunrise = now - sunriseDate.time
 		def beforeSunset = sunsetDate.time - now
 		def oneHour = 1000 * 60 * 60
 
-		if(afterSunrise < oneHour) {
+		if (afterSunrise < oneHour) {
 			//dawn
 			lux = (long)(lux * (afterSunrise/oneHour))
 		} else if (beforeSunset < oneHour) {
@@ -366,10 +386,6 @@ private estimateLux(obs, sunriseDate, sunsetDate) {
 			lux = (long)(lux * (beforeSunset/oneHour))
 		}
 		if(lux < 1) lux = 1	// obs.dayOrNight이 늦게 변경되는 경우가 있음
-	} else {
-		//night - always set to 10 for now
-		//could do calculations for dusk/dawn too
-		lux = 1
 	}
 	return lux
 }
@@ -405,11 +421,11 @@ private createCityName(location) {
 
 private fixScale(scale) {
 	switch (scale.toLowerCase()) {
-		case "c":
-		case "metric":
-			return "metric"
-		default:
-			return "imperial"
+	case "c":
+	case "metric":
+		return "metric"
+	default:
+		return "imperial"
 	}
 }
 
@@ -447,6 +463,11 @@ def publishDevice() {
 	data["moonDay"] = device.currentValue("moonDay")
 	data["statusbar"] = device.currentValue("statusbar")
 	data["status"] = device.currentValue("status")
+
+	data["station"] = device.currentValue("station")
+	data["weatherIcon"] = device.currentValue("weatherIcon")
+	data["forecastIcon"] = device.currentValue("forecastIcon")
+
 	data["update"] = new Date().format("yyyy-MM-dd HH:mm:ss", location.timeZone)
 
 	def payload = new groovy.json.JsonOutput().toJson(data)
