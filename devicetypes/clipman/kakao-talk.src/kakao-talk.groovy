@@ -18,11 +18,13 @@ import groovy.json.*
 include 'asynchttp_v1'
 
 metadata {
-	definition (name: "Kakao Talk", namespace: "clipman", author: "clipman") {
+	definition (name: "Kakao Talk", namespace: "clipman", author: "clipman", mnmn:"SmartThingsCommunity", vid: "339b1d41-c3fd-3475-9fb1-4985168ba900", ocfDeviceType: "x.com.st.d.voiceassistance") {
 		capability "Speech Synthesis"
+		capability "circlecircle06391.kakaoTalk"
 	}
 }
 
+/*
 // parse events into attributes
 def parse(String description) {
 	log.debug "Parsing '${description}'"
@@ -32,31 +34,37 @@ def setInfo(String app_url) {
 	log.debug "${app_url}"
 	state.app_url = app_url
 }
+*/
 
-def speak(text){
-	log.debug "Speak :" + text
+def speak(text) {
+	log.debug "Text: ${text}"
 	sendData(text)
 }
 
-def updated() {}
+def sendMessage(message, image = "") {
+	log.debug "Message: ${message}, Image: ${image}"
+	sendData(message, image)
+}
 
-def sendData(text){
+def sendData(text, image = "") {
 	parent.saveData(text)
 
-	_sendData(makeParam("me", text))
-	if(parent.getFriendsUUID().size() > 0){
-		_sendData(makeParam("friends", text))
+	//친구가 있으면 친구에게만 발송(친구가 본인인 경우)
+	if(parent.getFriendsUUID().size() > 0) {
+		_sendData(makeParam("friends", text, image))
+	} else {
+		_sendData(makeParam("me", text, image))
 	}
 }
 
-def _sendData(data){
+def _sendData(data) {
 	try {
 		httpPost(data) { resp ->
-			if(resp.data.result_code == 0){
-				log.debug "Success to send Message}"
-			} else if(resp.data.successful_receiver_uuids){
-				log.debug "Success to send Message}"
-			} else{
+			if(resp.data.result_code == 0) {
+				log.debug "Success to send Message"
+			} else if(resp.data.successful_receiver_uuids) {
+				log.debug "Success to send Message"
+			} else {
 				log.debug "Failed to send Message >> ${resp.data}"
 			}
 		}
@@ -65,18 +73,34 @@ def _sendData(data){
 	}
 }
 
-def makeParam(type, text){
-	def body = [
-		"object_type": "text",
-		"text": text,
-		"link": [
-			"web_url": parent.getMessageCheckURL(),
-			"mobile_web_url": parent.getMessageCheckURL()
-		 ]
-	]
+def makeParam(type, text, image) {
+	def body
+	if(image) {
+		body = [
+			"object_type": "feed",
+			"content": [
+				"title": "Image",
+				"description": text,
+				"image_url": image,
+				"link": [
+					"web_url": image,
+					"mobile_web_url": image
+			 	]
+			]
+		]
+	} else {
+		body = [
+			"object_type": "text",
+			"text": text,
+			"link": [
+				"web_url": parent.getMessageCheckURL(),
+				"mobile_web_url": parent.getMessageCheckURL()
+		 	]
+		]
+	}
 
 	def params = []
-	switch(type){
+	switch(type) {
 	case "me":
 		params = [
 			uri: "https://kapi.kakao.com/v2/api/talk/memo/default/send",
@@ -103,5 +127,6 @@ def makeParam(type, text){
 		]
 		break
 	}
+	log.info "Params: ${text}, Image: ${image}, ${params}"
 	return params
 }

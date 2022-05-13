@@ -1,5 +1,5 @@
 /**
- *	SmartWeather v2022-05-08
+ *	SmartWeather v2022-05-09
  *	clipman@naver.com
  *  날자
  *
@@ -16,7 +16,7 @@
 
 metadata {
 	definition (name: "SmartWeather", namespace: "clipman", author: "clipman", ocfDeviceType: "x.com.st.d.airqualitysensor",
-		mnmn: "SmartThingsCommunity", vid: "b606bfec-3258-3faa-9517-35a1787d8d9d") {
+		mnmn: "SmartThingsCommunity", vid: "1135e0e5-0214-3c8f-865f-0675d66750e9") {
 		capability "Air Quality Sensor"						//airQuality
 		capability "Dust Sensor"							//dustLevel, fineDustLevel
 		capability "Temperature Measurement"				//temperature
@@ -27,6 +27,8 @@ metadata {
 		capability "circlecircle06391.fineDustClass"		//fineDustClass
 		capability "circlecircle06391.windspeed"			//windSpeed
 		capability "circlecircle06391.windbearing"			//windBearing
+		capability "circlecircle06391.discomfortIndex"		//discomfortIndex
+		capability "circlecircle06391.discomfortClass"		//discomfortClass
 		capability "circlecircle06391.todayfeeltemp"		//temperatureFeel
 		capability "circlecircle06391.todaymintemp"			//temperatureMin
 		capability "circlecircle06391.todaymaxtemp"			//temperatureMax
@@ -47,11 +49,11 @@ metadata {
 		capability "circlecircle06391.moonDay"				//moonDay
 		capability "circlecircle06391.status"				//statusbar
 		capability "circlecircle06391.statusBar"			//status
+		capability "circlecircle06391.station"				//station
 		capability "Refresh"
 
 		attribute "weatherIcon", "String"
 		attribute "forecastIcon", "String"
-		attribute "station", "String"
 
 		command "pollAirKorea"
 		command "pollWeather"
@@ -61,11 +63,11 @@ metadata {
 		input "stationName", "text", title: "측청소 이름", defaultValue: "청라", required: true
 		input "subStationName", "text", title: "예비측청소 이름", defaultValue: "중봉", required: true
 
-		input "status_1", "enum", title: "Select a status1", required: true, options: ["온도", "습도", "미세먼지", "미세먼지등급", "초미세먼지", "초미세먼지등급", "공기질", "날씨", "비올확율", "체감온도", "최저온도", "최고온도", "풍속", "풍향", "기압", "기압변화", "밝기", "시계", "일출", "일몰", "월출", "월몰", "달의일수"], defaultValue: "온도"
-		input "status_2", "enum", title: "Select a status2", required: true, options: ["온도", "습도", "미세먼지", "미세먼지등급", "초미세먼지", "초미세먼지등급", "공기질", "날씨", "비올확율", "체감온도", "최저온도", "최고온도", "풍속", "풍향", "기압", "기압변화", "밝기", "시계", "일출", "일몰", "월출", "월몰", "달의일수", "표시안함"], defaultValue: "습도"
-		input "status_3", "enum", title: "Select a status3", required: true, options: ["온도", "습도", "미세먼지", "미세먼지등급", "초미세먼지", "초미세먼지등급", "공기질", "날씨", "비올확율", "체감온도", "최저온도", "최고온도", "풍속", "풍향", "기압", "기압변화", "밝기", "시계", "일출", "일몰", "월출", "월몰", "달의일수", "표시안함"], defaultValue: "공기질"
-		input "status_4", "enum", title: "Select a status4", required: true, options: ["온도", "습도", "미세먼지", "미세먼지등급", "초미세먼지", "초미세먼지등급", "공기질", "날씨", "비올확율", "체감온도", "최저온도", "최고온도", "풍속", "풍향", "기압", "기압변화", "밝기", "시계", "일출", "일몰", "월출", "월몰", "달의일수", "표시안함"], defaultValue: "시계"
-		input "status_5", "enum", title: "Select a status5", required: true, options: ["온도", "습도", "미세먼지", "미세먼지등급", "초미세먼지", "초미세먼지등급", "공기질", "날씨", "비올확율", "체감온도", "최저온도", "최고온도", "풍속", "풍향", "기압", "기압변화", "밝기", "시계", "일출", "일몰", "월출", "월몰", "달의일수", "표시안함"], defaultValue: "달의일수"
+		input "status_1", "enum", title: "Select a status1", required: true, options: ["온도", "습도", "미세먼지", "미세먼지등급", "초미세먼지", "초미세먼지등급", "공기질", "날씨", "비올확율", "불쾌지수", "불쾌지수등급", "체감온도", "최저온도", "최고온도", "풍속", "풍향", "기압", "기압변화", "밝기", "시계", "일출", "일몰", "월출", "월몰", "달의일수", "측정소"], defaultValue: "온도"
+		input "status_2", "enum", title: "Select a status2", required: true, options: ["온도", "습도", "미세먼지", "미세먼지등급", "초미세먼지", "초미세먼지등급", "공기질", "날씨", "비올확율", "불쾌지수", "불쾌지수등급", "체감온도", "최저온도", "최고온도", "풍속", "풍향", "기압", "기압변화", "밝기", "시계", "일출", "일몰", "월출", "월몰", "달의일수", "측정소", "표시안함"], defaultValue: "습도"
+		input "status_3", "enum", title: "Select a status3", required: true, options: ["온도", "습도", "미세먼지", "미세먼지등급", "초미세먼지", "초미세먼지등급", "공기질", "날씨", "비올확율", "불쾌지수", "불쾌지수등급", "체감온도", "최저온도", "최고온도", "풍속", "풍향", "기압", "기압변화", "밝기", "시계", "일출", "일몰", "월출", "월몰", "달의일수", "측정소", "표시안함"], defaultValue: "공기질"
+		input "status_4", "enum", title: "Select a status4", required: true, options: ["온도", "습도", "미세먼지", "미세먼지등급", "초미세먼지", "초미세먼지등급", "공기질", "날씨", "비올확율", "불쾌지수", "불쾌지수등급", "체감온도", "최저온도", "최고온도", "풍속", "풍향", "기압", "기압변화", "밝기", "시계", "일출", "일몰", "월출", "월몰", "달의일수", "측정소", "표시안함"], defaultValue: "시계"
+		input "status_5", "enum", title: "Select a status5", required: true, options: ["온도", "습도", "미세먼지", "미세먼지등급", "초미세먼지", "초미세먼지등급", "공기질", "날씨", "비올확율", "불쾌지수", "불쾌지수등급", "체감온도", "최저온도", "최고온도", "풍속", "풍향", "기압", "기압변화", "밝기", "시계", "일출", "일몰", "월출", "월몰", "달의일수", "측정소", "표시안함"], defaultValue: "달의일수"
 
 		input type: "paragraph", element: "paragraph", title: "AirKorea API Key", description: " https://www.data.go.kr/data/15073861/openapi.do<br> 위 사이트에서 활용신청하고 API Key를 발급 받으세요.", displayDuringSetup: false
 		input type: "paragraph", element: "paragraph", title: "측정소 조회 방법", description: " 브라우저 통해 원하시는 지역을 검색하세요.<br> http://www.airkorea.or.kr/web/realSearch", displayDuringSetup: false
@@ -78,7 +80,7 @@ metadata {
 }
 
 def statusbar() {
-	def statusMap = ["온도":"temperature", "습도":"humidity", "미세먼지":"dustLevel", "미세먼지등급":"dustClass", "초미세먼지":"fineDustLevel", "초미세먼지등급":"fineDustClass", "공기질":"airClass", "날씨":"weatherForecast", "비올확율":"precipChance", "체감온도":"temperatureFeel", "최저온도":"temperatureMin", "최고온도":"temperatureMax", "풍속":"windSpeed", "풍향":"windBearing", "기압":"pressure", "기압변화":"pressureTrend", "밝기":"illuminance", "시계":"visibility", "일출":"sunrise", "일몰":"sunset", "월출":"moonrise", "월몰":"moonset", "달의일수":"moonDay"]
+	def statusMap = ["온도":"temperature", "습도":"humidity", "미세먼지":"dustLevel", "미세먼지등급":"dustClass", "초미세먼지":"fineDustLevel", "초미세먼지등급":"fineDustClass", "공기질":"airClass", "날씨":"weatherForecast", "비올확율":"precipChance", "불쾌지수":"discomfortIndex", "불쾌지수등급":"discomfortClass", "체감온도":"temperatureFeel", "최저온도":"temperatureMin", "최고온도":"temperatureMax", "풍속":"windSpeed", "풍향":"windBearing", "기압":"pressure", "기압변화":"pressureTrend", "밝기":"illuminance", "시계":"visibility", "일출":"sunrise", "일몰":"sunset", "월출":"moonrise", "월몰":"moonset", "달의일수":"moonDay", "측정소":"station"]
 	if(settings.status_1 == null || settings.status_1 == "") settings.status_1 = "온도"
 	if(settings.status_2 == null || settings.status_2 == "") settings.status_2 = "습도"
 	if(settings.status_3 == null || settings.status_3 == "") settings.status_3 = "공기질"
@@ -265,9 +267,24 @@ def pollWeather() {
 		sendEvent(name: "temperature", value: obs.temperature, unit: tempUnits)
 		sendEvent(name: "temperatureFeel", value: obs.temperatureFeelsLike, unit: tempUnits)
 		sendEvent(name: "humidity", value: obs.relativeHumidity, unit: "%")
+
+		//DI(C) = temperature-0.55*(1-humidity/100)*(temperature-14.5)
+		def discomfortIndex = Math.round((obs.temperature-0.55*(1-obs.relativeHumidity/100)*(obs.temperature-14.5))*10)/10
+		if (discomfortIndex < 0) discomfortIndex = 0
+		if (discomfortIndex > 40) discomfortIndex = 40
+		sendEvent(name: "discomfortIndex", value: discomfortIndex, unit: "")
+
+		def discomfortClass
+		if (discomfortIndex < 21) discomfortClass = "좋음"
+		else if (discomfortIndex < 24) discomfortClass = "보통"
+		else if (discomfortIndex < 27) discomfortClass = "나쁨"
+		else if (discomfortIndex < 29) discomfortClass = "불쾌"
+		else discomfortClass = "최악"
+		sendEvent(name: "discomfortClass", value: discomfortClass, unit: "")
+
 		def weatherForecast = obs.wxPhraseMedium
 		weatherForecast = weatherForecast.replace("Sunny","맑음").replace("Clear","맑음").replace("Fair","맑음").replace("Cloudy","흐림").replace("Rain Shower","소나기")
-		weatherForecast = weatherForecast.replace("Snow Shower","눈").replace("Showers in Vicinity","지역에 따라 소나기").replace("Heavy Rain","폭우")
+		weatherForecast = weatherForecast.replace("Snow Shower","눈").replace("Showers in Vicinity","소나기").replace("Heavy Rain","폭우")
 		weatherForecast = weatherForecast.replace("Freezing Rain","우박").replace("Thunderstorm","뇌우").replace("Thunder","천둥").replace("Rain","비").replace("Wind","바람")
 		weatherForecast = weatherForecast.replace("Flurries","돌풍").replace("Snow","눈").replace("Fog","안개").replace("Ice","빙판").replace("Light","약한").replace("Heavy","강한")
 		weatherForecast = weatherForecast.replace("Partly","대체로").replace("Mostly","대체로").replace("and","그리고").replace("Haze","연무")
@@ -443,6 +460,8 @@ def publishDevice() {
 	data["fineDustClass"] = device.currentValue("fineDustClass")
 	data["windSpeed"] = device.currentValue("windSpeed")
 	data["windBearing"] = device.currentValue("windBearing")
+	data["discomfortIndex"] = device.currentValue("discomfortIndex")
+	data["discomfortClass"] = device.currentValue("discomfortClass")
 	data["temperatureFeel"] = device.currentValue("temperatureFeel")
 	data["temperatureMin"] = device.currentValue("temperatureMin")
 	data["temperatureMax"] = device.currentValue("temperatureMax")
@@ -463,8 +482,8 @@ def publishDevice() {
 	data["moonDay"] = device.currentValue("moonDay")
 	data["statusbar"] = device.currentValue("statusbar")
 	data["status"] = device.currentValue("status")
-
 	data["station"] = device.currentValue("station")
+
 	data["weatherIcon"] = device.currentValue("weatherIcon")
 	data["forecastIcon"] = device.currentValue("forecastIcon")
 
