@@ -1,5 +1,5 @@
 /**
- *	SmartWeather v2022-05-09
+ *	SmartWeather v2022-06-11
  *	clipman@naver.com
  *  날자
  *
@@ -16,7 +16,7 @@
 
 metadata {
 	definition (name: "SmartWeather", namespace: "clipman", author: "clipman", ocfDeviceType: "x.com.st.d.airqualitysensor",
-		mnmn: "SmartThingsCommunity", vid: "1135e0e5-0214-3c8f-865f-0675d66750e9") {
+		mnmn: "SmartThingsCommunity", vid: "eb148a1b-4623-33ca-9027-62abb387e5e9") {
 		capability "Air Quality Sensor"						//airQuality
 		capability "Dust Sensor"							//dustLevel, fineDustLevel
 		capability "Temperature Measurement"				//temperature
@@ -50,10 +50,9 @@ metadata {
 		capability "circlecircle06391.status"				//statusbar
 		capability "circlecircle06391.statusBar"			//status
 		capability "circlecircle06391.station"				//station
+		capability "circlecircle06391.weatherIcon"			//weatherIcon
+		capability "circlecircle06391.forecastIcon"			//forecastIcon
 		capability "Refresh"
-
-		attribute "weatherIcon", "String"
-		attribute "forecastIcon", "String"
 
 		command "pollAirKorea"
 		command "pollWeather"
@@ -483,7 +482,6 @@ def publishDevice() {
 	data["statusbar"] = device.currentValue("statusbar")
 	data["status"] = device.currentValue("status")
 	data["station"] = device.currentValue("station")
-
 	data["weatherIcon"] = device.currentValue("weatherIcon")
 	data["forecastIcon"] = device.currentValue("forecastIcon")
 
