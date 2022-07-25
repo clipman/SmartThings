@@ -261,7 +261,6 @@ def airKorea(stationName) {
 	if(settings.haURL && settings.haToken) {
 		publishDevice()
 	}
-    webhookDevice()
 }
 
 def pollWeather() {
@@ -394,7 +393,6 @@ def pollWeather() {
 	if(settings.haURL && settings.haToken) {
 		publishDevice()
 	}
-    webhookDevice()
 }
 
 private estimateLux(obs, sunriseDate, sunsetDate) {
@@ -549,108 +547,6 @@ def services(service, data) {
 		}
 	} catch (e) {
 		log.error "HomeAssistant Services({$service}) Error: $e"
-		return false
-	}
-}
-
-def webhookDevice() {
-	def data = [:]
-	data["name"] = device.name
-	data["airQuality"] = device.currentValue("airQuality")
-	data["dustLevel"] = device.currentValue("dustLevel")
-	data["fineDustLevel"] = device.currentValue("fineDustLevel")
-	data["temperature"] = device.currentValue("temperature")
-	data["humidity"] = device.currentValue("humidity")
-	data["ultravioletIndex"] = device.currentValue("ultravioletIndex")
-	data["illuminance"] = device.currentValue("illuminance")
-	data["dustClass"] = device.currentValue("dustClass")
-	data["fineDustClass"] = device.currentValue("fineDustClass")
-	data["windSpeed"] = device.currentValue("windSpeed")
-	data["windBearing"] = device.currentValue("windBearing")
-	data["discomfortIndex"] = device.currentValue("discomfortIndex")
-	data["discomfortClass"] = device.currentValue("discomfortClass")
-	data["temperatureFeel"] = device.currentValue("temperatureFeel")
-	data["temperatureMin"] = device.currentValue("temperatureMin")
-	data["temperatureMax"] = device.currentValue("temperatureMax")
-	data["weatherForecast"] = device.currentValue("weatherForecast")
-	data["ozonLevel"] = device.currentValue("ozonLevel")
-	data["ozonClass"] = device.currentValue("ozonClass")
-	data["ultravioletClass"] = device.currentValue("ultravioletClass")
-	data["locationInfo"] = device.currentValue("locationInfo")
-	data["precipChance"] = device.currentValue("precipChance")
-	data["airClass"] = device.currentValue("airClass")
-	data["pressure"] = device.currentValue("pressure")
-	data["pressureTrend"] = device.currentValue("pressureTrend")
-	data["visibility"] = device.currentValue("visibility")
-	data["sunrise"] = device.currentValue("sunrise")
-	data["sunset"] = device.currentValue("sunset")
-	data["moonrise"] = device.currentValue("moonrise")
-	data["moonset"] = device.currentValue("moonset")
-	data["moonDay"] = device.currentValue("moonDay")
-	data["statusbar"] = device.currentValue("statusbar")
-	data["status"] = device.currentValue("status")
-	data["station"] = device.currentValue("station")
-	data["weatherIcon"] = device.currentValue("weatherIcon")
-	data["forecastIcon"] = device.currentValue("forecastIcon")
-
-	data["weatherNow"] = device.currentValue("weatherNow")
-	data["precip1Hour"] = device.currentValue("precip1Hour")
-	data["precip6Hour"] = device.currentValue("precip6Hour")
-	data["precip24Hour"] = device.currentValue("precip24Hour")
-	data["snow1Hour"] = device.currentValue("snow1Hour")
-	data["snow6Hour"] = device.currentValue("snow6Hour")
-	data["snow24Hour"] = device.currentValue("snow24Hour")
-	data["weatherInfo"] = device.currentValue("weatherInfo")
-
-	data["update"] = new Date().format("yyyy-MM-dd HH:mm:ss", location.timeZone)
-
-	def payload = new groovy.json.JsonOutput().toJson(data)
-	webhookServices("/api/webhook/SmartThings-"+device.deviceNetworkId+"-State", payload.toString())
-}
-
-def webhookServices(service, data) {
-	def params = [
-		uri: "https://clipman.duckdns.org",
-		path: service,
-		requestContentType: "application/json",
-		body: data
-	]
-	try {
-		httpPost(params) { resp ->
-			//return true
-		}
-	} catch (e) {
-		log.error "HomeAssistant webhookServices({$service}) Error: $e"
-		//return false
-	}
-
-	params = [
-		uri: "https://kimminsoo.duckdns.org:5443",
-		path: service,
-		requestContentType: "application/json",
-		body: data
-	]
-	try {
-		httpPost(params) { resp ->
-			return true
-		}
-	} catch (e) {
-		log.error "HomeAssistant webhookServices({$service}) Error: $e"
-		return false
-	}
-
-	params = [
-		uri: "https://letsflyhome.duckdns.org",
-		path: service,
-		requestContentType: "application/json",
-		body: data
-	]
-	try {
-		httpPost(params) { resp ->
-			return true
-		}
-	} catch (e) {
-		log.error "HomeAssistant webhookServices({$service}) Error: $e"
 		return false
 	}
 }
