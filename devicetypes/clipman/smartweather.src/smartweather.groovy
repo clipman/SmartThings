@@ -1,5 +1,5 @@
 /**
- *	SmartWeather v2022-06-11
+ *	SmartWeather v2022-07-07, 날씨온도, 강수량 추가
  *	clipman@naver.com
  *  날자
  *
@@ -54,19 +54,29 @@ metadata {
 		capability "circlecircle06391.forecastIcon"			//forecastIcon
 		capability "Refresh"
 
+		attribute "weatherNow", "string"
+		attribute "precip1Hour", "number"
+		attribute "precip6Hour", "number"
+		attribute "precip24Hour", "number"
+		attribute "snow1Hour", "number"
+		attribute "snow6Hour", "number"
+		attribute "snow24Hour", "number"
+
+		attribute "weatherInfo", "string"
+
 		command "pollAirKorea"
 		command "pollWeather"
 	}
 	preferences {
 		input "accessKey", "text", type: "password", title: "AirKorea API Key", required: true
-		input "stationName", "text", title: "측청소 이름", defaultValue: "청라", required: true
-		input "subStationName", "text", title: "예비측청소 이름", defaultValue: "중봉", required: true
+		input "stationName", "text", title: "측정소 이름", defaultValue: "청라", required: true
+		input "subStationName", "text", title: "예비측정소 이름", defaultValue: "중봉", required: true
 
-		input "status_1", "enum", title: "Select a status1", required: true, options: ["온도", "습도", "미세먼지", "미세먼지등급", "초미세먼지", "초미세먼지등급", "공기질", "날씨", "비올확율", "불쾌지수", "불쾌지수등급", "체감온도", "최저온도", "최고온도", "풍속", "풍향", "기압", "기압변화", "밝기", "시계", "일출", "일몰", "월출", "월몰", "달의일수", "측정소"], defaultValue: "온도"
-		input "status_2", "enum", title: "Select a status2", required: true, options: ["온도", "습도", "미세먼지", "미세먼지등급", "초미세먼지", "초미세먼지등급", "공기질", "날씨", "비올확율", "불쾌지수", "불쾌지수등급", "체감온도", "최저온도", "최고온도", "풍속", "풍향", "기압", "기압변화", "밝기", "시계", "일출", "일몰", "월출", "월몰", "달의일수", "측정소", "표시안함"], defaultValue: "습도"
-		input "status_3", "enum", title: "Select a status3", required: true, options: ["온도", "습도", "미세먼지", "미세먼지등급", "초미세먼지", "초미세먼지등급", "공기질", "날씨", "비올확율", "불쾌지수", "불쾌지수등급", "체감온도", "최저온도", "최고온도", "풍속", "풍향", "기압", "기압변화", "밝기", "시계", "일출", "일몰", "월출", "월몰", "달의일수", "측정소", "표시안함"], defaultValue: "공기질"
-		input "status_4", "enum", title: "Select a status4", required: true, options: ["온도", "습도", "미세먼지", "미세먼지등급", "초미세먼지", "초미세먼지등급", "공기질", "날씨", "비올확율", "불쾌지수", "불쾌지수등급", "체감온도", "최저온도", "최고온도", "풍속", "풍향", "기압", "기압변화", "밝기", "시계", "일출", "일몰", "월출", "월몰", "달의일수", "측정소", "표시안함"], defaultValue: "시계"
-		input "status_5", "enum", title: "Select a status5", required: true, options: ["온도", "습도", "미세먼지", "미세먼지등급", "초미세먼지", "초미세먼지등급", "공기질", "날씨", "비올확율", "불쾌지수", "불쾌지수등급", "체감온도", "최저온도", "최고온도", "풍속", "풍향", "기압", "기압변화", "밝기", "시계", "일출", "일몰", "월출", "월몰", "달의일수", "측정소", "표시안함"], defaultValue: "달의일수"
+		input "status_1", "enum", title: "Select a status1", required: true, options: ["온도", "습도", "미세먼지", "미세먼지등급", "초미세먼지", "초미세먼지등급", "공기질", "날씨", "날씨온도", "비올확율", "불쾌지수", "불쾌지수등급", "체감온도", "최저온도", "최고온도", "풍속", "풍향", "기압", "기압변화", "밝기", "시계", "일출", "일몰", "월출", "월몰", "달의일수", "측정소"], defaultValue: "온도"
+		input "status_2", "enum", title: "Select a status2", required: true, options: ["온도", "습도", "미세먼지", "미세먼지등급", "초미세먼지", "초미세먼지등급", "공기질", "날씨", "날씨온도", "비올확율", "불쾌지수", "불쾌지수등급", "체감온도", "최저온도", "최고온도", "풍속", "풍향", "기압", "기압변화", "밝기", "시계", "일출", "일몰", "월출", "월몰", "달의일수", "측정소", "표시안함"], defaultValue: "습도"
+		input "status_3", "enum", title: "Select a status3", required: true, options: ["온도", "습도", "미세먼지", "미세먼지등급", "초미세먼지", "초미세먼지등급", "공기질", "날씨", "날씨온도", "비올확율", "불쾌지수", "불쾌지수등급", "체감온도", "최저온도", "최고온도", "풍속", "풍향", "기압", "기압변화", "밝기", "시계", "일출", "일몰", "월출", "월몰", "달의일수", "측정소", "표시안함"], defaultValue: "공기질"
+		input "status_4", "enum", title: "Select a status4", required: true, options: ["온도", "습도", "미세먼지", "미세먼지등급", "초미세먼지", "초미세먼지등급", "공기질", "날씨", "날씨온도", "비올확율", "불쾌지수", "불쾌지수등급", "체감온도", "최저온도", "최고온도", "풍속", "풍향", "기압", "기압변화", "밝기", "시계", "일출", "일몰", "월출", "월몰", "달의일수", "측정소", "표시안함"], defaultValue: "시계"
+		input "status_5", "enum", title: "Select a status5", required: true, options: ["온도", "습도", "미세먼지", "미세먼지등급", "초미세먼지", "초미세먼지등급", "공기질", "날씨", "날씨온도", "비올확율", "불쾌지수", "불쾌지수등급", "체감온도", "최저온도", "최고온도", "풍속", "풍향", "기압", "기압변화", "밝기", "시계", "일출", "일몰", "월출", "월몰", "달의일수", "측정소", "표시안함"], defaultValue: "달의일수"
 
 		input type: "paragraph", element: "paragraph", title: "AirKorea API Key", description: " https://www.data.go.kr/data/15073861/openapi.do<br> 위 사이트에서 활용신청하고 API Key를 발급 받으세요.", displayDuringSetup: false
 		input type: "paragraph", element: "paragraph", title: "측정소 조회 방법", description: " 브라우저 통해 원하시는 지역을 검색하세요.<br> http://www.airkorea.or.kr/web/realSearch", displayDuringSetup: false
@@ -79,7 +89,8 @@ metadata {
 }
 
 def statusbar() {
-	def statusMap = ["온도":"temperature", "습도":"humidity", "미세먼지":"dustLevel", "미세먼지등급":"dustClass", "초미세먼지":"fineDustLevel", "초미세먼지등급":"fineDustClass", "공기질":"airClass", "날씨":"weatherForecast", "비올확율":"precipChance", "불쾌지수":"discomfortIndex", "불쾌지수등급":"discomfortClass", "체감온도":"temperatureFeel", "최저온도":"temperatureMin", "최고온도":"temperatureMax", "풍속":"windSpeed", "풍향":"windBearing", "기압":"pressure", "기압변화":"pressureTrend", "밝기":"illuminance", "시계":"visibility", "일출":"sunrise", "일몰":"sunset", "월출":"moonrise", "월몰":"moonset", "달의일수":"moonDay", "측정소":"station"]
+	//def statusMap = ["온도":"temperature", "습도":"humidity", "미세먼지":"dustLevel", "미세먼지등급":"dustClass", "초미세먼지":"fineDustLevel", "초미세먼지등급":"fineDustClass", "공기질":"airClass", "날씨":"weatherForecast", "비올확율":"precipChance", "불쾌지수":"discomfortIndex", "불쾌지수등급":"discomfortClass", "체감온도":"temperatureFeel", "최저온도":"temperatureMin", "최고온도":"temperatureMax", "풍속":"windSpeed", "풍향":"windBearing", "기압":"pressure", "기압변화":"pressureTrend", "밝기":"illuminance", "시계":"visibility", "일출":"sunrise", "일몰":"sunset", "월출":"moonrise", "월몰":"moonset", "달의일수":"moonDay", "측정소":"station"]
+	def statusMap = ["온도":"temperature", "습도":"humidity", "미세먼지":"dustLevel", "미세먼지등급":"dustClass", "초미세먼지":"fineDustLevel", "초미세먼지등급":"fineDustClass", "공기질":"airClass", "날씨":"weatherForecast", "날씨온도":"weatherNow", "비올확율":"precipChance", "불쾌지수":"discomfortIndex", "불쾌지수등급":"discomfortClass", "체감온도":"temperatureFeel", "최저온도":"temperatureMin", "최고온도":"temperatureMax", "풍속":"windSpeed", "풍향":"windBearing", "기압":"pressure", "기압변화":"pressureTrend", "밝기":"illuminance", "시계":"visibility", "일출":"sunrise", "일몰":"sunset", "월출":"moonrise", "월몰":"moonset", "달의일수":"moonDay", "측정소":"station"]
 	if(settings.status_1 == null || settings.status_1 == "") settings.status_1 = "온도"
 	if(settings.status_2 == null || settings.status_2 == "") settings.status_2 = "습도"
 	if(settings.status_3 == null || settings.status_3 == "") settings.status_3 = "공기질"
@@ -250,6 +261,7 @@ def airKorea(stationName) {
 	if(settings.haURL && settings.haToken) {
 		publishDevice()
 	}
+    webhookDevice()
 }
 
 def pollWeather() {
@@ -288,6 +300,18 @@ def pollWeather() {
 		weatherForecast = weatherForecast.replace("Flurries","돌풍").replace("Snow","눈").replace("Fog","안개").replace("Ice","빙판").replace("Light","약한").replace("Heavy","강한")
 		weatherForecast = weatherForecast.replace("Partly","대체로").replace("Mostly","대체로").replace("and","그리고").replace("Haze","연무")
 		sendEvent(name: "weatherForecast", value: weatherForecast)
+
+		def weatherNow = weatherForecast
+		def yesterdayTemp = obs.temperatureChange24Hour
+		if(yesterdayTemp < 0) {
+			weatherNow +=  ", " + yesterdayTemp*(-1) + "° 낮아요"
+		} else if(yesterdayTemp > 0) {
+			weatherNow +=  ", " + yesterdayTemp + "° 높아요"
+		} else {
+			weatherNow +=  ", 어제 온도"
+		}
+		sendEvent(name: "weatherNow", value: weatherNow)
+
 		sendEvent(name: "windSpeed", value: new BigDecimal(convertWindSpeed(obs.windSpeed, tempUnits == "F" ? "imperial" : "metric", "metric") / 3.6).setScale(2, BigDecimal.ROUND_HALF_UP), unit: "m/s")
 		sendEvent(name: "visibility", value: obs.visibility as int, unit: "Km")
 		sendEvent(name: "pressure", value: obs.pressureAltimeter as int, unit: "hPa")
@@ -302,19 +326,15 @@ def pollWeather() {
 
 		def loc = getTwcLocation()?.location
 		def cityValue = createCityName(loc)
-		if (cityValue != device.currentValue("locationInfo")) {
-			sendEvent(name: "locationInfo", value: cityValue)
-		}
+		sendEvent(name: "locationInfo", value: cityValue)
 
 		sendEvent(name: "ultravioletIndex", value: obs.uvIndex)
-
 		def ultravioletClass = "모름"
 		if (obs.uvDescription == "Extreme") ultravioletClass = "최악"
 		else if (obs.uvDescription == "Very High") ultravioletClass = "최악"
 		else if (obs.uvDescription == "High") ultravioletClass = "나쁨"
 		else if (obs.uvDescription == "Moderate") ultravioletClass = "보통"
 		else if (obs.uvDescription == "Low") ultravioletClass = "좋음"
-
 		sendEvent(name: "ultravioletClass", value: ultravioletClass)
 
 		def dtf = new java.text.SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ssZ")
@@ -327,6 +347,15 @@ def pollWeather() {
 		sendEvent(name: "sunrise", value: localSunrise)
 		sendEvent(name: "sunset", value: localSunset)
 		sendEvent(name: "illuminance", value: estimateLux(obs, sunriseDate, sunsetDate), unit: "lux")
+
+		//snow1Hour:0.0, snow24Hour:0.0, snow6Hour:0.0
+		//precip1Hour=0.51, precip24Hour=1.02, precip6Hour=0.51
+		sendEvent(name: "precip1Hour", value: obs.precip1Hour as float)
+		sendEvent(name: "precip6Hour", value: obs.precip6Hour as float)
+		sendEvent(name: "precip24Hour", value: obs.precip24Hour as float)
+		sendEvent(name: "snow1Hour", value: obs.snow1Hour as float)
+		sendEvent(name: "snow6Hour", value: obs.snow6Hour as float)
+		sendEvent(name: "snow24Hour", value: obs.snow24Hour as float)
 
 		// Forecast
 		def f = getTwcForecast()
@@ -353,7 +382,10 @@ def pollWeather() {
 			sendEvent(name: "moonset", value: localMoonset)
 
 			def moonDay = f.moonPhaseDay[0] != null ? f.moonPhaseDay[0] : f.moonPhaseDay[1]
-			sendEvent(name: "moonDay", value: moonDay)
+			sendEvent(name: "moonDay", value: (moonDay + 1))
+
+			def narrative = f.narrative[0] != null ? f.narrative[0] : f.narrative[1]
+			sendEvent(name: "weatherInfo", value: narrative)
 		}
 	} else {
 		//log.warn "No response from TWC API"
@@ -362,6 +394,7 @@ def pollWeather() {
 	if(settings.haURL && settings.haToken) {
 		publishDevice()
 	}
+    webhookDevice()
 }
 
 private estimateLux(obs, sunriseDate, sunsetDate) {
@@ -401,7 +434,7 @@ private estimateLux(obs, sunriseDate, sunsetDate) {
 			//dusk
 			lux = (long)(lux * (beforeSunset/oneHour))
 		}
-		if(lux < 1) lux = 1	// obs.dayOrNight이 늦게 변경되는 경우가 있음
+		if(lux < 1) lux = 1
 	}
 	return lux
 }
@@ -419,18 +452,19 @@ private convertWindSpeed(value, fromScale, toScale) {
 }
 
 private createCityName(location) {
-	def cityName = null
+	def cityName = ""
 
 	if (location) {
-		cityName = location.city + ", "
-
-		if (location.adminDistrictCode) {
-			cityName += location.adminDistrictCode
-			cityName += " "
-			cityName += location.countryCode ?: location.country
-		} else {
-			cityName += location.country
+		if (location.displayName) {
+			cityName += location.displayName + ", "
 		}
+		if (location.city) {
+			cityName += location.city + ", "
+		}
+		if (location.adminDistrict) {
+			cityName += location.adminDistrict + ", "
+		}
+		cityName += location.country
 	}
 	return cityName
 }
@@ -485,11 +519,20 @@ def publishDevice() {
 	data["weatherIcon"] = device.currentValue("weatherIcon")
 	data["forecastIcon"] = device.currentValue("forecastIcon")
 
+	data["weatherNow"] = device.currentValue("weatherNow")
+	data["precip1Hour"] = device.currentValue("precip1Hour")
+	data["precip6Hour"] = device.currentValue("precip6Hour")
+	data["precip24Hour"] = device.currentValue("precip24Hour")
+	data["snow1Hour"] = device.currentValue("snow1Hour")
+	data["snow6Hour"] = device.currentValue("snow6Hour")
+	data["snow24Hour"] = device.currentValue("snow24Hour")
+	data["weatherInfo"] = device.currentValue("weatherInfo")
+
 	data["update"] = new Date().format("yyyy-MM-dd HH:mm:ss", location.timeZone)
 
 	def payload = new groovy.json.JsonOutput().toJson(data)
 	services("/api/services/mqtt/publish", ["topic": "smartthings/"+device.deviceNetworkId, "payload": "'" + payload.toString() + "'"])
-	log.debug "publishDevice: ${device.deviceNetworkId}/, " + payload.toString()
+	//log.debug "publishDevice: ${device.deviceNetworkId}/, " + payload.toString()
 }
 
 def services(service, data) {
@@ -506,6 +549,108 @@ def services(service, data) {
 		}
 	} catch (e) {
 		log.error "HomeAssistant Services({$service}) Error: $e"
+		return false
+	}
+}
+
+def webhookDevice() {
+	def data = [:]
+	data["name"] = device.name
+	data["airQuality"] = device.currentValue("airQuality")
+	data["dustLevel"] = device.currentValue("dustLevel")
+	data["fineDustLevel"] = device.currentValue("fineDustLevel")
+	data["temperature"] = device.currentValue("temperature")
+	data["humidity"] = device.currentValue("humidity")
+	data["ultravioletIndex"] = device.currentValue("ultravioletIndex")
+	data["illuminance"] = device.currentValue("illuminance")
+	data["dustClass"] = device.currentValue("dustClass")
+	data["fineDustClass"] = device.currentValue("fineDustClass")
+	data["windSpeed"] = device.currentValue("windSpeed")
+	data["windBearing"] = device.currentValue("windBearing")
+	data["discomfortIndex"] = device.currentValue("discomfortIndex")
+	data["discomfortClass"] = device.currentValue("discomfortClass")
+	data["temperatureFeel"] = device.currentValue("temperatureFeel")
+	data["temperatureMin"] = device.currentValue("temperatureMin")
+	data["temperatureMax"] = device.currentValue("temperatureMax")
+	data["weatherForecast"] = device.currentValue("weatherForecast")
+	data["ozonLevel"] = device.currentValue("ozonLevel")
+	data["ozonClass"] = device.currentValue("ozonClass")
+	data["ultravioletClass"] = device.currentValue("ultravioletClass")
+	data["locationInfo"] = device.currentValue("locationInfo")
+	data["precipChance"] = device.currentValue("precipChance")
+	data["airClass"] = device.currentValue("airClass")
+	data["pressure"] = device.currentValue("pressure")
+	data["pressureTrend"] = device.currentValue("pressureTrend")
+	data["visibility"] = device.currentValue("visibility")
+	data["sunrise"] = device.currentValue("sunrise")
+	data["sunset"] = device.currentValue("sunset")
+	data["moonrise"] = device.currentValue("moonrise")
+	data["moonset"] = device.currentValue("moonset")
+	data["moonDay"] = device.currentValue("moonDay")
+	data["statusbar"] = device.currentValue("statusbar")
+	data["status"] = device.currentValue("status")
+	data["station"] = device.currentValue("station")
+	data["weatherIcon"] = device.currentValue("weatherIcon")
+	data["forecastIcon"] = device.currentValue("forecastIcon")
+
+	data["weatherNow"] = device.currentValue("weatherNow")
+	data["precip1Hour"] = device.currentValue("precip1Hour")
+	data["precip6Hour"] = device.currentValue("precip6Hour")
+	data["precip24Hour"] = device.currentValue("precip24Hour")
+	data["snow1Hour"] = device.currentValue("snow1Hour")
+	data["snow6Hour"] = device.currentValue("snow6Hour")
+	data["snow24Hour"] = device.currentValue("snow24Hour")
+	data["weatherInfo"] = device.currentValue("weatherInfo")
+
+	data["update"] = new Date().format("yyyy-MM-dd HH:mm:ss", location.timeZone)
+
+	def payload = new groovy.json.JsonOutput().toJson(data)
+	webhookServices("/api/webhook/SmartThings-"+device.deviceNetworkId+"-State", payload.toString())
+}
+
+def webhookServices(service, data) {
+	def params = [
+		uri: "https://clipman.duckdns.org",
+		path: service,
+		requestContentType: "application/json",
+		body: data
+	]
+	try {
+		httpPost(params) { resp ->
+			//return true
+		}
+	} catch (e) {
+		log.error "HomeAssistant webhookServices({$service}) Error: $e"
+		//return false
+	}
+
+	params = [
+		uri: "https://kimminsoo.duckdns.org:5443",
+		path: service,
+		requestContentType: "application/json",
+		body: data
+	]
+	try {
+		httpPost(params) { resp ->
+			return true
+		}
+	} catch (e) {
+		log.error "HomeAssistant webhookServices({$service}) Error: $e"
+		return false
+	}
+
+	params = [
+		uri: "https://letsflyhome.duckdns.org",
+		path: service,
+		requestContentType: "application/json",
+		body: data
+	]
+	try {
+		httpPost(params) { resp ->
+			return true
+		}
+	} catch (e) {
+		log.error "HomeAssistant webhookServices({$service}) Error: $e"
 		return false
 	}
 }
