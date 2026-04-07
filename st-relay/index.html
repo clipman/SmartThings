@@ -1,0 +1,14 @@
+<!DOCTYPE html>
+<html><head><title>SmartThings OAuth Relay</title></head>
+<body>
+<script>
+var p = new URLSearchParams(location.search);
+var code = p.get('code');
+if (code && window.opener) {
+  window.opener.postMessage({ st_code: code }, '*');
+  window.close();
+} else {
+  document.body.textContent = '인증 완료. 이 창을 닫아주세요.';
+}
+</script>
+</body></html>
