@@ -1,27 +1,51 @@
 <!DOCTYPE html>
-<html><head><title>SmartThings OAuth Relay</title></head>
+<html><head><meta charset="utf-8"><title>ST OAuth Relay</title></head>
 <body>
+<p id="msg">인증 처리 중...</p>
 <script>
-var p = new URLSearchParams(location.search);
-var code = p.get('code');
-if (code) {
-  var state = p.get('state');
-  if (state) {
-    try {
-      var returnUrl = atob(state);
-      var sep = returnUrl.indexOf('?') >= 0 ? '&' : '?';
-      window.location.href = returnUrl + sep + 'st_code=' + encodeURIComponent(code);
-    } catch(e) {
-      document.body.textContent = '오류: 돌아갈 주소를 알 수 없습니다.';
-    }
-  } else if (window.opener) {
-    window.opener.postMessage({ st_code: code }, '*');
-    window.close();
-  } else {
-    document.body.textContent = '인증 완료. 이전 페이지로 돌아가세요.';
+var ST_CLIENT_ID     = 'b104ae2b-07eb-47af-88f1-70a3b7482e79';
+var ST_CLIENT_SECRET = '6e17abd5-d10e-4565-9bc9-f5e1bb4cbe0a';
+var REDIRECT_URI     = location.origin + location.pathname;
+
+async function run() {
+  var p = new URLSearchParams(location.search);
+  var code = p.get('code');
+  if (!code) { document.getElementById('msg').textContent = '인증 완료. 이 창을 닫아주세요.'; return; }
+
+  var deviceId = null;
+  try { deviceId = atob(p.get('state') || ''); } catch(e) {}
+
+  // 코드 → 토큰 교환
+  var res = await fetch('https://api.smartthings.com/oauth/token', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/x-www-form-urlencoded',
+      'Authorization': 'Basic ' + btoa(ST_CLIENT_ID + ':' + ST_CLIENT_SECRET)
+    },
+    body: new URLSearchParams({ grant_type:'authorization_code', code:code, redirect_uri:REDIRECT_URI }).toString()
+  });
+  if (!res.ok) { document.getElementById('msg').textContent = '토큰 교환 실패: ' + res.status; return; }
+  var data = await res.json();
+
+  // 현재 날씨 페이지 URL 조회
+  var currentUrl = null;
+  if (deviceId) {
+    var dr = await fetch(
+      'https://api.smartthings.com/v1/devices/' + deviceId +
+      '/components/main/capabilities/happyspiky44008.http/status',
+      { headers: { 'Authorization': 'Bearer ' + data.access_token } }
+    );
+    if (dr.ok) { var dd = await dr.json(); currentUrl = dd.info && dd.info.value; }
   }
-} else {
-  document.body.textContent = '인증 완료. 이 창을 닫아주세요.';
+
+  if (!currentUrl) { document.getElementById('msg').textContent = '페이지 주소를 찾을 수 없습니다. 직접 열어주세요.'; return; }
+
+  // 현재 포트로 이동 (토큰은 hash로 전달, 서버에 노출 안 됨)
+  var expiry = Date.now() + data.expires_in * 1000;
+  window.location.href = currentUrl + '#sta=' + encodeURIComponent(data.access_token) +
+    '&str=' + encodeURIComponent(data.refresh_token) +
+    '&ste=' + encodeURIComponent(String(expiry));
 }
+run();
 </script>
 </body></html>
