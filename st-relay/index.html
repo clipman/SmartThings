@@ -4,9 +4,22 @@
 <script>
 var p = new URLSearchParams(location.search);
 var code = p.get('code');
-if (code && window.opener) {
-  window.opener.postMessage({ st_code: code }, '*');
-  window.close();
+if (code) {
+  var state = p.get('state');
+  if (state) {
+    try {
+      var returnUrl = atob(state);
+      var sep = returnUrl.indexOf('?') >= 0 ? '&' : '?';
+      window.location.href = returnUrl + sep + 'st_code=' + encodeURIComponent(code);
+    } catch(e) {
+      document.body.textContent = '오류: 돌아갈 주소를 알 수 없습니다.';
+    }
+  } else if (window.opener) {
+    window.opener.postMessage({ st_code: code }, '*');
+    window.close();
+  } else {
+    document.body.textContent = '인증 완료. 이전 페이지로 돌아가세요.';
+  }
 } else {
   document.body.textContent = '인증 완료. 이 창을 닫아주세요.';
 }
