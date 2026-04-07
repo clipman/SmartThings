@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html><head><meta charset="utf-8"><title>ST OAuth Relay</title></head>
+<html><head><meta charset="utf-8"><title>SmartThings OAuth Relay</title></head>
 <body>
 <p id="msg">인증 처리 중...</p>
 <script>
@@ -40,7 +40,7 @@ async function run() {
 
   if (!currentUrl) { document.getElementById('msg').textContent = '페이지 주소를 찾을 수 없습니다. 직접 열어주세요.'; return; }
 
-  // 현재 포트로 이동 (토큰은 hash로 전달, 서버에 노출 안 됨)
+  // 현재 포트로 이동 (토큰은 hash로 전달)
   var expiry = Date.now() + data.expires_in * 1000;
   window.location.href = currentUrl + '#sta=' + encodeURIComponent(data.access_token) +
     '&str=' + encodeURIComponent(data.refresh_token) +
