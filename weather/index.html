@@ -1,0 +1,80 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>네이버 날씨</title>
+</head>
+<body>
+<p id="msg">허브 주소 확인 중...</p>
+<script>
+var ST_ACCESS_TOKEN_COOKIE = 'st_access_token';
+var ST_REFRESH_TOKEN_COOKIE = 'st_refresh_token';
+var ST_CLIENT_ID     = 'b104ae2b-07eb-47af-88f1-70a3b7482e79';
+var ST_CLIENT_SECRET = '6e17abd5-d10e-4565-9bc9-f5e1bb4cbe0a';
+var ST_RELAY_URL     = 'https://clipman.github.io/SmartThings/st-relay/';
+
+function getCookie(k) {
+  var m = document.cookie.match('(^|;)\\s*' + k + '\\s*=\\s*([^;]+)');
+  return m ? decodeURIComponent(m.pop()) : null;
+}
+function setCookie(k, v, days) {
+  var e = new Date();
+  e.setTime(e.getTime() + days * 86400000);
+  document.cookie = k + '=' + encodeURIComponent(v) + ';expires=' + e.toUTCString() + ';path=/';
+}
+
+async function getToken() {
+  var token = getCookie(ST_ACCESS_TOKEN_COOKIE);
+  if (token) return token;
+  // 리프레시 토큰으로 갱신
+  var refresh = getCookie(ST_REFRESH_TOKEN_COOKIE);
+  if (!refresh) return null;
+  var res = await fetch('https://api.smartthings.com/oauth/token', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/x-www-form-urlencoded',
+      'Authorization': 'Basic ' + btoa(ST_CLIENT_ID + ':' + ST_CLIENT_SECRET)
+    },
+    body: new URLSearchParams({ grant_type: 'refresh_token', refresh_token: refresh }).toString()
+  });
+  if (!res.ok) return null;
+  var data = await res.json();
+  var expiry = Date.now() + data.expires_in * 1000;
+  setCookie(ST_ACCESS_TOKEN_COOKIE, data.access_token, 1);
+  setCookie(ST_REFRESH_TOKEN_COOKIE, data.refresh_token, 60);
+  return data.access_token;
+}
+
+async function run() {
+  var deviceId = new URLSearchParams(location.search).get('d');
+  if (!deviceId) {
+    document.getElementById('msg').textContent = '기기 ID가 없습니다. (?d=DEVICE_ID)';
+    return;
+  }
+  var token = await getToken();
+  if (!token) {
+    document.getElementById('msg').innerHTML =
+      '인증이 필요합니다. <a href="' + ST_RELAY_URL + '">인증하러 가기</a>';
+    return;
+  }
+  var res = await fetch(
+    'https://api.smartthings.com/v1/devices/' + deviceId +
+    '/components/main/capabilities/happyspiky44008.http/status',
+    { headers: { 'Authorization': 'Bearer ' + token } }
+  );
+  if (!res.ok) {
+    document.getElementById('msg').textContent = '허브 주소 조회 실패: ' + res.status;
+    return;
+  }
+  var data = await res.json();
+  var hubUrl = data.info && data.info.value;
+  if (!hubUrl) {
+    document.getElementById('msg').textContent = '허브가 오프라인 상태입니다.';
+    return;
+  }
+  window.location.href = hubUrl;
+}
+run();
+</script>
+</body>
+</html>
