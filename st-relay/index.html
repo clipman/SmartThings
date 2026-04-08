@@ -36,6 +36,14 @@ async function run() {
   if (!res.ok) { document.getElementById('msg').textContent = '토큰 교환 실패: ' + res.status; return; }
   var data = await res.json();
 
+  function setCookie(k, v, days) {
+    var e = new Date();
+    e.setTime(e.getTime() + days * 86400000);
+    document.cookie = k + '=' + encodeURIComponent(v) + ';expires=' + e.toUTCString() + ';path=/';
+  }
+  setCookie('st_access_token', data.access_token, 1);
+  setCookie('st_refresh_token', data.refresh_token, 60);
+
   // 현재 페이지 URL 조회
   var currentUrl = null;
   if (deviceId) {
