@@ -51,46 +51,43 @@ async function run() {
     document.getElementById('msg').textContent = '기기 ID가 없습니다. (?d=DEVICE_ID)';
     return;
   }
-  var token = await getToken();
-  if (!token) {
-    var authUrl = 'https://api.smartthings.com/oauth/authorize' +
-      '?client_id=' + ST_CLIENT_ID +
-      '&scope=' + encodeURIComponent('r:devices:* x:devices:*') +
-      '&response_type=code' +
-      '&redirect_uri=' + encodeURIComponent('https://clipman.github.io/SmartThings/st-relay/') +
-      '&state=' + btoa(deviceId);
+
+  var authUrl = 'https://api.smartthings.com/oauth/authorize' +
+    '?client_id=' + ST_CLIENT_ID +
+    '&scope=' + encodeURIComponent('r:devices:* x:devices:*') +
+    '&response_type=code' +
+    '&redirect_uri=' + encodeURIComponent('https://clipman.github.io/SmartThings/st-relay/') +
+    '&state=' + btoa(deviceId);
+
+  function needAuth() {
     document.getElementById('msg').innerHTML =
       '인증이 필요합니다. <a href="' + authUrl + '">인증하러 가기</a>';
   }
-  var res = await fetch(
-    'https://api.smartthings.com/v1/devices/' + deviceId +
-    '/components/main/capabilities/happyspiky44008.http/status',
-    { headers: { 'Authorization': 'Bearer ' + token } }
-  );
-  if (res.status === 401) {
-    // 액세스 토큰 만료 - 쿠키 삭제 후 리프레시
-    document.cookie = ST_ACCESS_TOKEN_COOKIE + '=;expires=Thu, 01 Jan 1970 00:00:00 UTC;path=/';
-    token = await getToken();
-    if (!token) {
-      var authUrl = 'https://api.smartthings.com/oauth/authorize' +
-        '?client_id=' + ST_CLIENT_ID +
-        '&scope=' + encodeURIComponent('r:devices:* x:devices:*') +
-        '&response_type=code' +
-        '&redirect_uri=' + encodeURIComponent('https://clipman.github.io/SmartThings/st-relay/') +
-        '&state=' + btoa(deviceId);
-      document.getElementById('msg').innerHTML =
-        '인증이 필요합니다. <a href="' + authUrl + '">인증하러 가기</a>';
-    }
-    res = await fetch(
+
+  var token = await getToken();
+  if (!token) { needAuth(); return; }
+
+  async function fetchHubUrl(t) {
+    return await fetch(
       'https://api.smartthings.com/v1/devices/' + deviceId +
       '/components/main/capabilities/happyspiky44008.http/status',
-      { headers: { 'Authorization': 'Bearer ' + token } }
+      { headers: { 'Authorization': 'Bearer ' + t } }
     );
   }
+
+  var res = await fetchHubUrl(token);
+  if (res.status === 401) {
+    document.cookie = ST_ACCESS_TOKEN_COOKIE + '=;expires=Thu, 01 Jan 1970 00:00:00 UTC;path=/';
+    token = await getToken();
+    if (!token) { needAuth(); return; }
+    res = await fetchHubUrl(token);
+  }
+  if (res.status === 401) { needAuth(); return; }
   if (!res.ok) {
     document.getElementById('msg').textContent = '허브 주소 조회 실패: ' + res.status;
     return;
   }
+
   var data = await res.json();
   var hubUrl = data.info && data.info.value;
   if (!hubUrl) {
