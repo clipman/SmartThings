@@ -53,9 +53,14 @@ async function run() {
   }
   var token = await getToken();
   if (!token) {
+    var authUrl = 'https://api.smartthings.com/oauth/authorize' +
+      '?client_id=' + ST_CLIENT_ID +
+      '&scope=' + encodeURIComponent('r:devices:*') +
+      '&response_type=code' +
+      '&redirect_uri=' + encodeURIComponent('https://clipman.github.io/SmartThings/st-relay/') +
+      '&state=' + btoa(deviceId);
     document.getElementById('msg').innerHTML =
-      '인증이 필요합니다. <a href="' + ST_RELAY_URL + '">인증하러 가기</a>';
-    return;
+      '인증이 필요합니다. <a href="' + authUrl + '">인증하러 가기</a>';
   }
   var res = await fetch(
     'https://api.smartthings.com/v1/devices/' + deviceId +
@@ -67,9 +72,14 @@ async function run() {
     document.cookie = ST_ACCESS_TOKEN_COOKIE + '=;expires=Thu, 01 Jan 1970 00:00:00 UTC;path=/';
     token = await getToken();
     if (!token) {
+      var authUrl = 'https://api.smartthings.com/oauth/authorize' +
+        '?client_id=' + ST_CLIENT_ID +
+        '&scope=' + encodeURIComponent('r:devices:*') +
+        '&response_type=code' +
+        '&redirect_uri=' + encodeURIComponent('https://clipman.github.io/SmartThings/st-relay/') +
+        '&state=' + btoa(deviceId);
       document.getElementById('msg').innerHTML =
-        '인증이 필요합니다. <a href="' + ST_RELAY_URL + '">인증하러 가기</a>';
-      return;
+        '인증이 필요합니다. <a href="' + authUrl + '">인증하러 가기</a>';
     }
     res = await fetch(
       'https://api.smartthings.com/v1/devices/' + deviceId +
