@@ -55,7 +55,7 @@ async function run() {
   if (!token) {
     var authUrl = 'https://api.smartthings.com/oauth/authorize' +
       '?client_id=' + ST_CLIENT_ID +
-      '&scope=' + encodeURIComponent('r:devices:*') +
+      '&scope=' + encodeURIComponent('r:devices:* x:devices:*') +
       '&response_type=code' +
       '&redirect_uri=' + encodeURIComponent('https://clipman.github.io/SmartThings/st-relay/') +
       '&state=' + btoa(deviceId);
@@ -74,7 +74,7 @@ async function run() {
     if (!token) {
       var authUrl = 'https://api.smartthings.com/oauth/authorize' +
         '?client_id=' + ST_CLIENT_ID +
-        '&scope=' + encodeURIComponent('r:devices:*') +
+        '&scope=' + encodeURIComponent('r:devices:* x:devices:*') +
         '&response_type=code' +
         '&redirect_uri=' + encodeURIComponent('https://clipman.github.io/SmartThings/st-relay/') +
         '&state=' + btoa(deviceId);
