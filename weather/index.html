@@ -62,6 +62,21 @@ async function run() {
     '/components/main/capabilities/happyspiky44008.http/status',
     { headers: { 'Authorization': 'Bearer ' + token } }
   );
+  if (res.status === 401) {
+    // 액세스 토큰 만료 - 쿠키 삭제 후 리프레시
+    document.cookie = ST_ACCESS_TOKEN_COOKIE + '=;expires=Thu, 01 Jan 1970 00:00:00 UTC;path=/';
+    token = await getToken();
+    if (!token) {
+      document.getElementById('msg').innerHTML =
+        '인증이 필요합니다. <a href="' + ST_RELAY_URL + '">인증하러 가기</a>';
+      return;
+    }
+    res = await fetch(
+      'https://api.smartthings.com/v1/devices/' + deviceId +
+      '/components/main/capabilities/happyspiky44008.http/status',
+      { headers: { 'Authorization': 'Bearer ' + token } }
+    );
+  }
   if (!res.ok) {
     document.getElementById('msg').textContent = '허브 주소 조회 실패: ' + res.status;
     return;
