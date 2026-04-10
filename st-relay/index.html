@@ -41,27 +41,16 @@ async function run() {
     e.setTime(e.getTime() + days * 86400000);
     document.cookie = k + '=' + encodeURIComponent(v) + ';expires=' + e.toUTCString() + ';path=/';
   }
-  setCookie('st_access_token', data.access_token, 1);
-  setCookie('st_refresh_token', data.refresh_token, 60);
-
-  // 현재 페이지 URL 조회
-  var currentUrl = null;
-  if (deviceId) {
-    var dr = await fetch(
-      'https://api.smartthings.com/v1/devices/' + deviceId +
-      '/components/main/capabilities/happyspiky44008.http/status',
-      { headers: { 'Authorization': 'Bearer ' + data.access_token } }
-    );
-    if (dr.ok) { var dd = await dr.json(); currentUrl = dd.info && dd.info.value; }
-  }
-
-  if (!currentUrl) { document.getElementById('msg').textContent = '페이지 주소를 찾을 수 없습니다. 직접 열어주세요.'; return; }
-
-  // 현재 포트로 이동 (토큰은 hash로 전달)
   var expiry = Date.now() + data.expires_in * 1000;
-  window.location.href = currentUrl + '#sta=' + encodeURIComponent(data.access_token) +
-    '&str=' + encodeURIComponent(data.refresh_token) +
-    '&ste=' + encodeURIComponent(String(expiry));
+  setCookie('st_access_token',  data.access_token,  1);
+  setCookie('st_refresh_token', data.refresh_token, 60);
+  setCookie('st_token_expiry',  String(expiry),      1);
+
+  if (!deviceId) { document.getElementById('msg').textContent = '인증 완료. 이 창을 닫아주세요.'; return; }
+
+  // hub 페이지로 이동 (hub → 로컬 IP 경로가 모바일에서 안정적)
+  window.location.href = 'https://clipman.github.io/SmartThings/hub/?d=' +
+    encodeURIComponent(deviceId) + '&auth=1';
 }
 run();
 </script>
