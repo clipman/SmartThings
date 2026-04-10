@@ -7,11 +7,9 @@
 <body>
 <p id="msg">허브 주소 확인 중...</p>
 <script>
-var ST_ACCESS_TOKEN_COOKIE = 'st_access_token';
-var ST_REFRESH_TOKEN_COOKIE = 'st_refresh_token';
 var ST_CLIENT_ID     = 'b104ae2b-07eb-47af-88f1-70a3b7482e79';
 var ST_CLIENT_SECRET = '6e17abd5-d10e-4565-9bc9-f5e1bb4cbe0a';
-var ST_RELAY_URL     = 'https://clipman.github.io/SmartThings/st-relay/';
+var ST_RELAY_URL = 'https://clipman.github.io/SmartThings/st-relay/';
 
 function getCookie(k) {
   var m = document.cookie.match('(^|;)\\s*' + k + '\\s*=\\s*([^;]+)');
@@ -24,10 +22,9 @@ function setCookie(k, v, days) {
 }
 
 async function getToken() {
-  var token = getCookie(ST_ACCESS_TOKEN_COOKIE);
+  var token = getCookie('st_access_token');
   if (token) return token;
-  // 리프레시 토큰으로 갱신
-  var refresh = getCookie(ST_REFRESH_TOKEN_COOKIE);
+  var refresh = getCookie('st_refresh_token');
   if (!refresh) return null;
   var res = await fetch('https://api.smartthings.com/oauth/token', {
     method: 'POST',
@@ -40,8 +37,9 @@ async function getToken() {
   if (!res.ok) return null;
   var data = await res.json();
   var expiry = Date.now() + data.expires_in * 1000;
-  setCookie(ST_ACCESS_TOKEN_COOKIE, data.access_token, 1);
-  setCookie(ST_REFRESH_TOKEN_COOKIE, data.refresh_token, 60);
+  setCookie('st_access_token',  data.access_token,  1);
+  setCookie('st_refresh_token', data.refresh_token, 60);
+  setCookie('st_token_expiry',  String(expiry),      1);
   return data.access_token;
 }
 
@@ -56,12 +54,23 @@ async function run() {
     '?client_id=' + ST_CLIENT_ID +
     '&scope=' + encodeURIComponent('r:devices:* x:devices:*') +
     '&response_type=code' +
-    '&redirect_uri=' + encodeURIComponent('https://clipman.github.io/SmartThings/st-relay/') +
+    '&redirect_uri=' + encodeURIComponent(ST_RELAY_URL) +
     '&state=' + btoa(deviceId);
 
   function needAuth() {
     document.getElementById('msg').innerHTML =
       '인증이 필요합니다. <a href="' + authUrl + '">인증하러 가기</a>';
+  }
+
+  // st-relay에서 auth=1로 넘어온 경우 hash에서 토큰 추출 → 쿠키 저장
+  if (new URLSearchParams(location.search).get('auth') === '1' && location.hash) {
+    var h = new URLSearchParams(location.hash.slice(1));
+    var at = h.get('sta'), rt = h.get('str'), ex = h.get('ste');
+    if (at && rt) {
+      setCookie('st_access_token',  at, 1);
+      setCookie('st_refresh_token', rt, 60);
+      setCookie('st_token_expiry',  ex || String(Date.now() + 86400000), 1);
+    }
   }
 
   var token = await getToken();
@@ -77,7 +86,7 @@ async function run() {
 
   var res = await fetchHubUrl(token);
   if (res.status === 401) {
-    document.cookie = ST_ACCESS_TOKEN_COOKIE + '=;expires=Thu, 01 Jan 1970 00:00:00 UTC;path=/';
+    document.cookie = 'st_access_token=;expires=Thu, 01 Jan 1970 00:00:00 UTC;path=/';
     token = await getToken();
     if (!token) { needAuth(); return; }
     res = await fetchHubUrl(token);
@@ -95,18 +104,16 @@ async function run() {
     return;
   }
 
-  // auth=1 인 경우 쿠키의 토큰을 hash로 전달 (모바일 호환)
-  if (new URLSearchParams(location.search).get('auth') === '1') {
-    var at = getCookie('st_access_token');
-    var rt = getCookie('st_refresh_token');
-    var ex = getCookie('st_token_expiry');
-    if (at && rt) {
-      hubUrl += '#sta=' + encodeURIComponent(at) +
-                '&str=' + encodeURIComponent(rt) +
-                '&ste=' + encodeURIComponent(ex || String(Date.now() + 86400000));
-    }
-  }
-  window.location.href = hubUrl;
+  // 항상 토큰을 hash로 전달 → 포트 변경 시에도 localStorage 갱신됨
+  var rt2 = getCookie('st_refresh_token');
+  var ex2 = getCookie('st_token_expiry') || String(Date.now() + 86400000);
+  var hash = token && rt2
+    ? '#sta=' + encodeURIComponent(token) +
+      '&str=' + encodeURIComponent(rt2) +
+      '&ste=' + encodeURIComponent(ex2)
+    : '';
+
+  window.location.href = hubUrl + hash;
 }
 run();
 </script>
