@@ -36,21 +36,26 @@ async function run() {
   if (!res.ok) { document.getElementById('msg').textContent = '토큰 교환 실패: ' + res.status; return; }
   var data = await res.json();
 
+  var expiry = Date.now() + data.expires_in * 1000;
+
+  // GitHub Pages 쿠키 저장 (hub 페이지 일반 접속용)
   function setCookie(k, v, days) {
     var e = new Date();
     e.setTime(e.getTime() + days * 86400000);
     document.cookie = k + '=' + encodeURIComponent(v) + ';expires=' + e.toUTCString() + ';path=/';
   }
-  var expiry = Date.now() + data.expires_in * 1000;
   setCookie('st_access_token',  data.access_token,  1);
   setCookie('st_refresh_token', data.refresh_token, 60);
   setCookie('st_token_expiry',  String(expiry),      1);
 
   if (!deviceId) { document.getElementById('msg').textContent = '인증 완료. 이 창을 닫아주세요.'; return; }
 
-  // hub 페이지로 이동 (hub → 로컬 IP 경로가 모바일에서 안정적)
+  // hub 페이지로 이동, 토큰을 hash로 전달 (iOS ITP 우회)
   window.location.href = 'https://clipman.github.io/SmartThings/hub/?d=' +
-    encodeURIComponent(deviceId) + '&auth=1';
+    encodeURIComponent(deviceId) + '&auth=1' +
+    '#sta=' + encodeURIComponent(data.access_token) +
+    '&str=' + encodeURIComponent(data.refresh_token) +
+    '&ste=' + encodeURIComponent(String(expiry));
 }
 run();
 </script>
