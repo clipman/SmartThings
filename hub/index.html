@@ -94,6 +94,18 @@ async function run() {
     document.getElementById('msg').textContent = '허브가 오프라인 상태입니다.';
     return;
   }
+
+  // auth=1 인 경우 쿠키의 토큰을 hash로 전달 (모바일 호환)
+  if (new URLSearchParams(location.search).get('auth') === '1') {
+    var at = getCookie('st_access_token');
+    var rt = getCookie('st_refresh_token');
+    var ex = getCookie('st_token_expiry');
+    if (at && rt) {
+      hubUrl += '#sta=' + encodeURIComponent(at) +
+                '&str=' + encodeURIComponent(rt) +
+                '&ste=' + encodeURIComponent(ex || String(Date.now() + 86400000));
+    }
+  }
   window.location.href = hubUrl;
 }
 run();
