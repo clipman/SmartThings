@@ -46,7 +46,7 @@ async function run() {
   }
   setCookie('st_access_token',  data.access_token,  1);
   setCookie('st_refresh_token', data.refresh_token, 60);
-  setCookie('st_token_expiry',  String(expiry),      1);
+  setCookie('st_token_expiry',  String(expiry),      2);
 
   if (!deviceId) { document.getElementById('msg').textContent = '인증 완료. 이 창을 닫아주세요.'; return; }
 
