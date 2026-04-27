@@ -39,7 +39,7 @@ async function getToken() {
   var expiry = Date.now() + data.expires_in * 1000;
   setCookie('st_access_token',  data.access_token,  1);
   setCookie('st_refresh_token', data.refresh_token, 60);
-  setCookie('st_token_expiry',  String(expiry),      1);
+  setCookie('st_token_expiry',  String(expiry),      2);
   return data.access_token;
 }
 
@@ -69,7 +69,7 @@ async function run() {
     if (at && rt) {
       setCookie('st_access_token',  at, 1);
       setCookie('st_refresh_token', rt, 60);
-      setCookie('st_token_expiry',  ex || String(Date.now() + 86400000), 1);
+      setCookie('st_token_expiry',  ex || String(Date.now() + 86400000), 2);
     }
   }
 
