@@ -43,6 +43,7 @@ async function run() {
     var e = new Date();
     e.setTime(e.getTime() + days * 86400000);
     document.cookie = k + '=' + encodeURIComponent(v) + ';expires=' + e.toUTCString() + ';path=/';
+    try { localStorage.setItem(k, v); } catch(e) {}
   }
   setCookie('st_access_token',  data.access_token,  1);
   setCookie('st_refresh_token', data.refresh_token, 60);
