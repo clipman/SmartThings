@@ -26,10 +26,60 @@ function delCookie(k) {
   document.cookie = k + '=;expires=Thu, 01 Jan 1970 00:00:00 UTC;path=/';
   try { localStorage.removeItem(k); } catch(e) {}
 }
+var ST_REFRESH_LOCK_KEY = 'st_refresh_lock';
+var ST_REFRESH_LOCK_TTL = 15000;
+function sleep(ms) {
+  return new Promise(function(resolve) { setTimeout(resolve, ms); });
+}
+function readRefreshLock() {
+  var raw = getCookie(ST_REFRESH_LOCK_KEY);
+  try { return raw ? JSON.parse(raw) : null; } catch(e) { return null; }
+}
+function writeRefreshLock(owner, expires) {
+  var value = JSON.stringify({ owner: owner, expires: expires });
+  try { localStorage.setItem(ST_REFRESH_LOCK_KEY, value); } catch(e) {}
+  document.cookie = ST_REFRESH_LOCK_KEY + '=' + encodeURIComponent(value) + ';max-age=' + Math.ceil(ST_REFRESH_LOCK_TTL / 1000) + ';path=/';
+}
+function acquireRefreshLock(owner) {
+  var now = Date.now();
+  var lock = readRefreshLock();
+  if (lock && lock.expires > now && lock.owner !== owner) return false;
+  try {
+    writeRefreshLock(owner, now + ST_REFRESH_LOCK_TTL);
+    lock = readRefreshLock();
+    return !!(lock && lock.owner === owner);
+  } catch(e) {
+    return true;
+  }
+}
+function releaseRefreshLock(owner) {
+  try {
+    var lock = readRefreshLock();
+    if (lock && lock.owner === owner) delCookie(ST_REFRESH_LOCK_KEY);
+  } catch(e) {}
+}
+async function waitForRefreshLock(owner) {
+  for (var i = 0; i < 24; i++) {
+    var lock = readRefreshLock();
+    if (!lock || lock.expires <= Date.now() || lock.owner === owner) return;
+    await sleep(250);
+    var token = getCookie('st_access_token');
+    var expiry = parseInt(getCookie('st_token_expiry') || '0');
+    if (token && Date.now() < expiry - 60000) return;
+  }
+}
 
 async function refreshToken() {
+  var owner = String(Date.now()) + '-' + Math.random();
+  if (!acquireRefreshLock(owner)) {
+    await waitForRefreshLock(owner);
+    var latestToken = getCookie('st_access_token');
+    var latestExpiry = parseInt(getCookie('st_token_expiry') || '0');
+    if (latestToken && Date.now() < latestExpiry - 60000) return true;
+    if (!acquireRefreshLock(owner)) return false;
+  }
   var refresh = getCookie('st_refresh_token');
-  if (!refresh) return false;
+  if (!refresh) { releaseRefreshLock(owner); return false; }
   var res = await fetch('https://api.smartthings.com/oauth/token', {
     method: 'POST',
     headers: {
@@ -40,14 +90,16 @@ async function refreshToken() {
   });
   if (res.status === 401) {
     if (getCookie('st_refresh_token') === refresh) delCookie('st_refresh_token');
+    releaseRefreshLock(owner);
     return false;
   }
-  if (!res.ok) return false;
+  if (!res.ok) { releaseRefreshLock(owner); return false; }
   var data = await res.json();
   var expiry = Date.now() + data.expires_in * 1000;
   setCookie('st_access_token',  data.access_token,  1);
   setCookie('st_refresh_token', data.refresh_token, 60);
   setCookie('st_token_expiry',  String(expiry),      2);
+  releaseRefreshLock(owner);
   return true;
 }
 
