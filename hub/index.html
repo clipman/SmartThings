@@ -13,19 +13,23 @@ var ST_RELAY_URL = 'https://clipman.github.io/SmartThings/st-relay/';
 
 function getCookie(k) {
   var m = document.cookie.match('(^|;)\\s*' + k + '\\s*=\\s*([^;]+)');
-  return m ? decodeURIComponent(m.pop()) : null;
+  if (m) return decodeURIComponent(m.pop());
+  try { var v = localStorage.getItem(k); return v !== null ? v : null; } catch(e) { return null; }
 }
 function setCookie(k, v, days) {
   var e = new Date();
   e.setTime(e.getTime() + days * 86400000);
   document.cookie = k + '=' + encodeURIComponent(v) + ';expires=' + e.toUTCString() + ';path=/';
+  try { localStorage.setItem(k, v); } catch(e) {}
+}
+function delCookie(k) {
+  document.cookie = k + '=;expires=Thu, 01 Jan 1970 00:00:00 UTC;path=/';
+  try { localStorage.removeItem(k); } catch(e) {}
 }
 
-async function getToken() {
-  var token = getCookie('st_access_token');
-  if (token) return token;
+async function refreshToken() {
   var refresh = getCookie('st_refresh_token');
-  if (!refresh) return null;
+  if (!refresh) return false;
   var res = await fetch('https://api.smartthings.com/oauth/token', {
     method: 'POST',
     headers: {
@@ -34,13 +38,30 @@ async function getToken() {
     },
     body: new URLSearchParams({ grant_type: 'refresh_token', refresh_token: refresh }).toString()
   });
-  if (!res.ok) return null;
+  if (res.status === 401) {
+    if (getCookie('st_refresh_token') === refresh) delCookie('st_refresh_token');
+    return false;
+  }
+  if (!res.ok) return false;
   var data = await res.json();
   var expiry = Date.now() + data.expires_in * 1000;
   setCookie('st_access_token',  data.access_token,  1);
   setCookie('st_refresh_token', data.refresh_token, 60);
   setCookie('st_token_expiry',  String(expiry),      2);
-  return data.access_token;
+  return true;
+}
+
+async function getToken() {
+  var token = getCookie('st_access_token');
+  var expiry = parseInt(getCookie('st_token_expiry') || '0');
+  if (token && Date.now() < expiry - 600000) return token;
+  if (!await refreshToken()) {
+    var latestToken = getCookie('st_access_token') || token;
+    var latestExpiry = parseInt(getCookie('st_token_expiry') || String(expiry || 0));
+    if (latestToken && Date.now() < latestExpiry - 60000) return latestToken;
+    return null;
+  }
+  return getCookie('st_access_token');
 }
 
 async function run() {
@@ -86,7 +107,7 @@ async function run() {
 
   var res = await fetchHubUrl(token);
   if (res.status === 401) {
-    document.cookie = 'st_access_token=;expires=Thu, 01 Jan 1970 00:00:00 UTC;path=/';
+    delCookie('st_access_token');
     token = await getToken();
     if (!token) { needAuth(); return; }
     res = await fetchHubUrl(token);
