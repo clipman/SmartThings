@@ -146,7 +146,13 @@ async function run() {
     }
   }
 
-  var token = await getToken();
+  var isAuthCallback = new URLSearchParams(location.search).get('auth') === '1';
+  var token;
+  if (isAuthCallback && getCookie('st_access_token')) {
+    token = getCookie('st_access_token');  // 방금 저장한 토큰 바로 사용, 갱신 시도 안 함
+  } else {
+    token = await getToken();
+  }
   if (!token) { needAuth(); return; }
 
   async function fetchHubUrl(t) {
