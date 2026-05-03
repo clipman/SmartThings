@@ -184,8 +184,11 @@ async function run() {
   }
 
   // 항상 토큰을 hash로 전달 → 포트 변경 시에도 localStorage 갱신됨
+  var freshToken = getCookie('st_access_token');
   var rt2 = getCookie('st_refresh_token');
-  var ex2 = getCookie('st_token_expiry') || String(Date.now() + 86400000);
+  var ex2 = getCookie('st_token_expiry');
+  if (!ex2) ex2 = String(Date.now() + 86400000);
+  token = freshToken || token;  // 갱신 후 최신값 사용
   var hash = token && rt2
     ? '#sta=' + encodeURIComponent(token) +
       '&str=' + encodeURIComponent(rt2) +
