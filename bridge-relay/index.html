@@ -1,0 +1,144 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>SmartThings Bridge Relay</title>
+  <style>
+    * { box-sizing: border-box; }
+    html, body { margin: 0; min-height: 100%; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      background: #f4f7fb;
+      color: #1f2937;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 20px;
+    }
+    .card {
+      width: 100%;
+      max-width: 460px;
+      background: white;
+      border-radius: 18px;
+      box-shadow: 0 12px 40px rgba(0, 0, 0, 0.08);
+      padding: 24px 22px;
+    }
+    h1 {
+      margin: 0 0 10px;
+      font-size: 22px;
+      color: #1565c0;
+    }
+    p {
+      margin: 8px 0 0;
+      line-height: 1.55;
+    }
+    .status {
+      margin-top: 16px;
+      padding: 14px 16px;
+      border-radius: 12px;
+      font-size: 14px;
+      white-space: pre-wrap;
+      word-break: break-word;
+    }
+    .loading { background: #fff8e1; color: #8a4b00; }
+    .ok { background: #e8f5e9; color: #1b5e20; }
+    .error { background: #ffebee; color: #b71c1c; }
+    .hint {
+      margin-top: 14px;
+      font-size: 13px;
+      color: #5f6b7a;
+    }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <h1>SmartThings 인증</h1>
+    <p>브리지 서버에서 사용할 SmartThings 토큰을 준비하고 있습니다.</p>
+    <div id="status" class="status loading">인증 정보를 확인하는 중...</div>
+    <p class="hint">이 페이지는 SmartWeb 브리지 서버 인증 전용입니다.</p>
+  </div>
+
+  <script>
+    const ST_CLIENT_ID = "b104ae2b-07eb-47af-88f1-70a3b7482e79";
+    const ST_CLIENT_SECRET = "6e17abd5-d10e-4565-9bc9-f5e1bb4cbe0a";
+    const ST_TOKEN_URL = "https://api.smartthings.com/oauth/token";
+    const REDIRECT_URI = "https://clipman.github.io/SmartThings/bridge-relay/";
+
+    const statusEl = document.getElementById("status");
+
+    function setStatus(message, kind) {
+      statusEl.className = "status " + (kind || "loading");
+      statusEl.textContent = message;
+    }
+
+    function basicAuth() {
+      return "Basic " + btoa(ST_CLIENT_ID + ":" + ST_CLIENT_SECRET);
+    }
+
+    async function exchangeCode(code) {
+      const body = new URLSearchParams({
+        grant_type: "authorization_code",
+        code: code,
+        redirect_uri: REDIRECT_URI
+      });
+
+      const response = await fetch(ST_TOKEN_URL, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/x-www-form-urlencoded",
+          "Authorization": basicAuth()
+        },
+        body: body.toString()
+      });
+
+      if (!response.ok) {
+        throw new Error("토큰 교환 실패: HTTP " + response.status);
+      }
+
+      return response.json();
+    }
+
+    async function run() {
+      const currentUrl = new URL(window.location.href);
+      const query = currentUrl.searchParams;
+
+      if (query.get("error")) {
+        setStatus("인증 실패: " + (query.get("error_description") || query.get("error")), "error");
+        return;
+      }
+
+      if (currentUrl.hash) {
+        setStatus("인증이 완료되었습니다. SmartWeb으로 돌아가 주세요.", "ok");
+        return;
+      }
+
+      const code = query.get("code");
+      if (!code) {
+        setStatus("인증 코드가 없습니다. SmartWeb에서 다시 시도해 주세요.", "error");
+        return;
+      }
+
+      setStatus("SmartThings 토큰을 가져오는 중...", "loading");
+
+      try {
+        const data = await exchangeCode(code);
+        const expiresAt = Date.now() + ((data.expires_in || 0) * 1000);
+        const baseUrl = REDIRECT_URI.replace(/\?[^#]*$/, "");
+        const hash = new URLSearchParams({
+          sta: data.access_token || "",
+          str: data.refresh_token || "",
+          ste: String(expiresAt)
+        }).toString();
+
+        setStatus("인증 완료. SmartWeb으로 돌아갑니다...", "ok");
+        window.location.replace(baseUrl + "#" + hash);
+      } catch (error) {
+        setStatus(String(error && error.message ? error.message : error), "error");
+      }
+    }
+
+    run();
+  </script>
+</body>
+</html>
