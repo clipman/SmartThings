@@ -98,6 +98,17 @@
     color: #0d1117;
   }
 
+  .btn-close {
+    background: transparent;
+    color: var(--text3);
+    border: none;
+    padding: 4px 6px;
+    font-size: 15px;
+    line-height: 1;
+  }
+
+  .btn-close:hover { color: var(--text2); }
+
   .btn-reload {
     background: var(--bg3);
     color: var(--text2);
@@ -234,6 +245,7 @@
 <body>
 
 <header>
+  <button class="btn-close" onclick="window.close()" title="닫기">✕</button>
   <div class="logo">ST<span>/</span>editor</div>
   <div class="field-badge" id="field-badge">—</div>
   <div class="btn-row">
@@ -332,8 +344,7 @@ async function loadDeviceInfo() {
   const info = document.getElementById('device-info');
   info.style.display = 'block';
   info.innerHTML =
-    '<strong>' + (data.label || data.name || DEVICE_ID) + '</strong>' +
-    ' &nbsp;·&nbsp; <span>' + DEVICE_ID + '</span>';
+    '<strong>' + (data.label || data.name || DEVICE_ID) + '</strong>';
 }
 
 // ──────────────────────────────────────────────
@@ -419,7 +430,7 @@ async function saveValue() {
 // ──────────────────────────────────────────────
 (async function init() {
   if (!TOKEN || !DEVICE_ID) {
-    setStatus('error', 'URL 파라미터 오류: token, d 필수 (#token=...&d=...&f=...)');
+    setStatus('error', 'URL 파라미터 오류');
     return;
   }
   await loadCurrentValue();
