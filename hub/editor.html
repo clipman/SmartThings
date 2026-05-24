@@ -272,13 +272,11 @@
 <script>
 // ──────────────────────────────────────────────
 //  URL 파라미터 파싱
-//  #token=ACCESS_TOKEN&d=DEVICE_ID&f=prompt
 // ──────────────────────────────────────────────
 const hashParams = new URLSearchParams(location.hash.slice(1));
 const TOKEN     = hashParams.get('token') || '';
 const DEVICE_ID = hashParams.get('d') || '';
 const FIELD     = hashParams.get('f') || 'prompt';  // prompt | context | template | speak
-history.replaceState(null, '', location.pathname);
 
 // field → { component, capability, attribute, command, label }
 const FIELD_MAP = {
@@ -426,6 +424,7 @@ async function saveValue() {
 //  시작
 // ──────────────────────────────────────────────
 (async function init() {
+  history.replaceState(null, '', location.pathname);
   if (!TOKEN || !DEVICE_ID) {
     setStatus('error', 'URL 파라미터 오류');
     return;
