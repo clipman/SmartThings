@@ -278,6 +278,7 @@ const hashParams = new URLSearchParams(location.hash.slice(1));
 const TOKEN     = hashParams.get('token') || '';
 const DEVICE_ID = hashParams.get('d') || '';
 const FIELD     = hashParams.get('f') || 'prompt';  // prompt | context | template | speak
+history.replaceState(null, '', location.pathname);
 
 // field → { component, capability, attribute, command, label }
 const FIELD_MAP = {
