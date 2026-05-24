@@ -264,12 +264,12 @@
 <script>
 // ──────────────────────────────────────────────
 //  URL 파라미터 파싱
-//  ?token=ACCESS_TOKEN&d=DEVICE_ID&f=prompt
+//  #token=ACCESS_TOKEN&d=DEVICE_ID&f=prompt
 // ──────────────────────────────────────────────
-const params    = new URLSearchParams(location.search);
-const TOKEN     = params.get('token') || '';
-const DEVICE_ID = params.get('d') || '';
-const FIELD     = params.get('f') || 'prompt';  // prompt | context | template
+const hashParams = new URLSearchParams(location.hash.slice(1));
+const TOKEN     = hashParams.get('token') || '';
+const DEVICE_ID = hashParams.get('d') || '';
+const FIELD     = hashParams.get('f') || 'prompt';  // prompt | context | template
 
 // field → { component, capability, attribute, command, label }
 const FIELD_MAP = {
@@ -418,7 +418,7 @@ async function saveValue() {
 // ──────────────────────────────────────────────
 (async function init() {
   if (!TOKEN || !DEVICE_ID) {
-    setStatus('error', 'URL 파라미터 오류: token, d 필수');
+    setStatus('error', 'URL 파라미터 오류: token, d 필수 (#token=...&d=...&f=...)');
     return;
   }
   await loadCurrentValue();
