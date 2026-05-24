@@ -86,20 +86,21 @@
   .btn-save {
     background: var(--accent);
     color: #0d1117;
+    padding: 6px 28px;
   }
 
   .btn-close {
     background: var(--bg3);
     color: var(--text2);
     border: 1px solid var(--border);
-    padding: 6px 14px;
+    padding: 6px 20px;
   }
 
   .btn-reload {
     background: var(--bg3);
     color: var(--text2);
     border: 1px solid var(--border);
-    padding: 6px 10px;
+    padding: 6px 20px;
   }
 
   /* ── 메인 ── */
@@ -164,7 +165,7 @@
   }
 
   .editor-label strong { color: var(--text); font-weight: 600; text-transform: none; letter-spacing: 0; }
-  .editor-label .field-name { color: var(--text); font-weight: 600; text-transform: none; letter-spacing: 0; }
+  .editor-label .field-name { color: var(--text2); font-weight: 600; text-transform: none; letter-spacing: 0; }
 
   .char-count {
     font-family: 'JetBrains Mono', monospace;
@@ -266,7 +267,6 @@ const fieldCfg = FIELD_MAP[FIELD] || FIELD_MAP.prompt;
 
 // ── UI 초기화
 document.getElementById('editor-label-text').textContent = fieldCfg.label;
-// device-info 영역은 loadDeviceInfo 후 editor-label에 반영
 
 const editor  = document.getElementById('editor');
 const btnSave = document.getElementById('btn-save');
