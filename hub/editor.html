@@ -426,7 +426,7 @@ async function saveValue() {
 // ──────────────────────────────────────────────
 (async function init() {
   if (!TOKEN || !DEVICE_ID) {
-    setStatus('error', 'URL 파라미터 오류: token, d 필수 (#token=...&d=...&f=...)');
+    setStatus('error', 'URL 파라미터 오류');
     return;
   }
   await loadCurrentValue();
