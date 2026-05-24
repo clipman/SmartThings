@@ -31,12 +31,13 @@
     font-family: 'Pretendard', -apple-system, sans-serif;
     font-size: 14px;
     line-height: 1.6;
+    overflow: hidden;
   }
 
   body {
     display: flex;
     flex-direction: column;
-    min-height: 100vh;
+    height: 100dvh;
     padding: 0;
   }
 
@@ -77,11 +78,13 @@
     flex: 1;
     display: flex;
     flex-direction: column;
-    padding: 16px 20px;
-    gap: 12px;
+    padding: 12px 16px;
+    gap: 10px;
     max-width: 800px;
     width: 100%;
     margin: 0 auto;
+    overflow: hidden;
+    padding-bottom: max(12px, env(safe-area-inset-bottom));
   }
 
   /* ── 상태 바 ── */
@@ -151,7 +154,7 @@
 
   textarea {
     flex: 1;
-    min-height: 220px;
+    min-height: 0;
     width: 100%;
     background: var(--bg2);
     border: 1px solid var(--border);
@@ -161,7 +164,7 @@
     font-size: 13px;
     line-height: 1.7;
     padding: 14px 16px;
-    resize: vertical;
+    resize: none;
     outline: none;
     transition: border-color 0.15s;
   }
@@ -412,7 +415,7 @@ async function saveValue() {
         component:  fieldCfg.component,
         capability: fieldCfg.capability,
         command:    fieldCfg.command,
-        arguments:  [{ [fieldCfg.arg]: value }],
+        arguments:  [value],
       }]
     };
 
