@@ -276,6 +276,7 @@ const FIELD_MAP = {
   prompt:   { component: 'main',    capability: 'letsfly.prompt',   attribute: 'prompt',   command: 'setPrompt',   label: '프롬프트' },
   context:  { component: 'context', capability: 'letsfly.context',  attribute: 'context',  command: 'setContext',  label: '컨텍스트' },
   template: { component: 'main',    capability: 'letsfly.template', attribute: 'template', command: 'setTemplate', label: '템플릿' },
+  speak:    { component: 'main',    capability: 'letsfly.speak',    attribute: 'speak',    command: 'setSpeak',    label: '메시지' },
 };
 
 const fieldCfg = FIELD_MAP[FIELD] || FIELD_MAP.prompt;
