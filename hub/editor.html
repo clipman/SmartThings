@@ -99,15 +99,11 @@
   }
 
   .btn-close {
-    background: transparent;
-    color: var(--text3);
-    border: none;
-    padding: 4px 6px;
-    font-size: 15px;
-    line-height: 1;
+    background: var(--bg3);
+    color: var(--text2);
+    border: 1px solid var(--border);
+    padding: 6px 14px;
   }
-
-  .btn-close:hover { color: var(--text2); }
 
   .btn-reload {
     background: var(--bg3);
@@ -430,7 +426,7 @@ async function saveValue() {
 // ──────────────────────────────────────────────
 (async function init() {
   if (!TOKEN || !DEVICE_ID) {
-    setStatus('error', 'URL 파라미터 오류');
+    setStatus('error', 'URL 파라미터 오류: token, d 필수 (#token=...&d=...&f=...)');
     return;
   }
   await loadCurrentValue();
