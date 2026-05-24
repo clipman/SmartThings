@@ -142,21 +142,6 @@
     background: currentColor;
   }
 
-  /* ── 기기 정보 ── */
-  #device-info {
-    display: none;
-    padding: 10px 12px;
-    background: var(--bg2);
-    border: 1px solid var(--border);
-    border-radius: var(--radius);
-    font-size: 12px;
-    color: var(--text2);
-    flex-shrink: 0;
-  }
-
-  #device-info strong { color: var(--text); font-weight: 500; }
-  #device-info .field-name { color: var(--text2); }
-
   /* ── 에디터 영역 ── */
   .editor-wrap {
     flex: 1;
@@ -177,6 +162,9 @@
     align-items: center;
     flex-shrink: 0;
   }
+
+  .editor-label strong { color: var(--text); font-weight: 600; text-transform: none; letter-spacing: 0; }
+  .editor-label .field-name { color: var(--text3); font-weight: 400; text-transform: none; letter-spacing: 0; }
 
   .char-count {
     font-family: 'JetBrains Mono', monospace;
@@ -246,8 +234,6 @@
     <span id="status-msg">초기화 중...</span>
   </div>
 
-  <div id="device-info"></div>
-
   <div class="editor-wrap">
     <div class="editor-label">
       <span id="editor-label-text">내용</span>
@@ -280,6 +266,7 @@ const fieldCfg = FIELD_MAP[FIELD] || FIELD_MAP.prompt;
 
 // ── UI 초기화
 document.getElementById('editor-label-text').textContent = fieldCfg.label;
+// device-info 영역은 loadDeviceInfo 후 editor-label에 반영
 
 const editor  = document.getElementById('editor');
 const btnSave = document.getElementById('btn-save');
@@ -325,10 +312,9 @@ async function loadDeviceInfo() {
   );
   if (!res.ok) return;
   const data = await res.json();
-  const info = document.getElementById('device-info');
-  info.style.display = 'block';
-  info.innerHTML =
-    '<strong>' + (data.label || data.name || DEVICE_ID) + '</strong>' +
+  const deviceName = data.label || data.name || DEVICE_ID;
+  document.getElementById('editor-label-text').innerHTML =
+    '<strong>' + deviceName + '</strong>' +
     ' <span class="field-name">- ' + fieldCfg.label + '</span>';
 }
 
