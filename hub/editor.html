@@ -62,16 +62,6 @@
 
   .logo span { color: var(--text2); font-weight: 400; }
 
-  .field-badge {
-    background: var(--bg3);
-    border: 1px solid var(--border);
-    border-radius: 20px;
-    padding: 3px 10px;
-    font-size: 11px;
-    font-family: 'JetBrains Mono', monospace;
-    color: var(--text2);
-  }
-
   /* ── 버튼 (헤더 오른쪽) ── */
   .btn-row {
     display: flex;
@@ -165,6 +155,7 @@
   }
 
   #device-info strong { color: var(--text); font-weight: 500; }
+  #device-info .field-name { color: var(--text2); }
 
   /* ── 에디터 영역 ── */
   .editor-wrap {
@@ -243,7 +234,6 @@
 <header>
   <button class="btn-close" id="btn-close" onclick="window.close()">닫기</button>
   <div class="logo">ST<span>/</span>editor</div>
-  <div class="field-badge" id="field-badge">—</div>
   <div class="btn-row">
     <button class="btn-reload" id="btn-reload" title="현재 값 다시 읽기" onclick="loadCurrentValue()">↺</button>
     <button class="btn-save"   id="btn-save"   disabled onclick="saveValue()">저장</button>
@@ -289,7 +279,6 @@ const FIELD_MAP = {
 const fieldCfg = FIELD_MAP[FIELD] || FIELD_MAP.prompt;
 
 // ── UI 초기화
-document.getElementById('field-badge').textContent = fieldCfg.label;
 document.getElementById('editor-label-text').textContent = fieldCfg.label;
 
 const editor  = document.getElementById('editor');
@@ -339,7 +328,8 @@ async function loadDeviceInfo() {
   const info = document.getElementById('device-info');
   info.style.display = 'block';
   info.innerHTML =
-    '<strong>' + (data.label || data.name || DEVICE_ID) + '</strong>';
+    '<strong>' + (data.label || data.name || DEVICE_ID) + '</strong>' +
+    ' <span class="field-name">- ' + fieldCfg.label + '</span>';
 }
 
 // ──────────────────────────────────────────────
