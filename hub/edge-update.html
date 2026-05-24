@@ -1,0 +1,255 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>SmartThings Edge 드라이버 업데이트</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;background:#0f1117;color:#e2e8f0;min-height:100vh}
+.header{background:linear-gradient(135deg,#1a1f2e,#252d3d);border-bottom:1px solid #2d3748;padding:14px 16px;display:flex;align-items:center;gap:10px;position:sticky;top:0;z-index:10}
+.header h1{font-size:16px;font-weight:700;color:#63b3ed;letter-spacing:.5px}
+.header .ver{font-size:10px;color:#4a5568;margin-left:auto}
+#status{padding:8px 16px;font-size:12px;text-align:center;border-bottom:1px solid #2d3748;display:flex;align-items:center;justify-content:center;gap:6px;min-height:36px;flex-wrap:wrap}
+.ok{background:#1a2e1a;color:#68d391}.loading{background:#2d2a1a;color:#f6ad55}.error{background:#2d1a1a;color:#fc8181}
+.body{padding:12px 14px}
+.card{background:#1a1f2e;border:1px solid #2d3748;border-radius:8px;padding:12px;margin-bottom:10px}
+.card-title{font-size:12px;font-weight:700;color:#90cdf4;margin-bottom:8px}
+.card-hint{font-size:11px;color:#4a5568;margin-bottom:10px;line-height:1.5}
+label{font-size:11px;color:#718096;display:block;margin-bottom:3px}
+input,select{width:100%;background:#0f1117;border:1px solid #2d3748;border-radius:6px;color:#e2e8f0;padding:7px 9px;font-size:12px;outline:none;margin-bottom:8px}
+input:focus,select:focus{border-color:#63b3ed}
+.btn{width:100%;padding:10px;border:none;border-radius:6px;font-size:13px;font-weight:600;cursor:pointer;margin-bottom:6px}
+.btn-primary{background:#2b6cb0;color:#fff}.btn-primary:active{background:#2c5282}
+.btn-success{background:#1c4532;color:#68d391}.btn-success:active{background:#174130}
+.btn:disabled{opacity:0.4;cursor:not-allowed}
+.result{background:#0a0d14;border:1px solid #2d3748;border-radius:6px;padding:10px;font-size:11px;color:#a0aec0;margin-top:8px;line-height:1.6;min-height:36px}
+.driver-item{display:flex;justify-content:space-between;align-items:center;padding:6px 0;border-bottom:1px solid #1e2535;font-size:12px}
+.driver-item:last-child{border-bottom:none}
+.driver-name{color:#e2e8f0;font-weight:600}
+.driver-ver{color:#4a5568;font-size:10px;margin-top:2px}
+.driver-ch{font-size:10px;color:#2d6a4f;background:#1a2e1a;padding:2px 6px;border-radius:10px}
+</style>
+</head>
+<body>
+<div class="header">
+  <span style="font-size:20px">⚙️</span>
+  <h1>SmartThings 엣지 드라이버 업데이트</h1>
+  <span class="ver" id="ver-label"></span>
+</div>
+<div id="status" class="loading">
+  <span id="status-text">초기화 중...</span>
+</div>
+
+<div class="body">
+  <div class="card">
+    <div class="card-title">🔑 Personal Access Token</div>
+    <div class="card-hint">드라이버 업데이트에 PAT가 필요합니다. <a href="https://account.smartthings.com/tokens" target="_blank" style="color:#63b3ed">발급 페이지</a>에서 모든 권한을 선택하여 발급하세요.</div>
+    <label>PAT 토큰 입력</label>
+    <div style="display:flex;gap:6px">
+      <input type="password" id="patInput" placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx" style="margin-bottom:0;flex:1">
+      <button class="btn btn-primary" onclick="savePat()" style="width:auto;padding:7px 12px;margin-bottom:0">저장</button>
+    </div>
+    <div id="pat-status" style="font-size:11px;margin-top:6px;color:#4a5568"></div>
+  </div>
+
+  <div class="card">
+    <div class="card-title">🔄 드라이버 즉시 업데이트</div>
+    <div class="card-hint">허브에 설치된 드라이버를 채널의 최신 버전으로 즉시 업데이트합니다.</div>
+    <label>Hub</label>
+    <select id="hubSel" onchange="loadInstalledDrivers()">
+      <option value="">-- Hub 선택 --</option>
+    </select>
+    <label>설치된 드라이버</label>
+    <select id="driverSel">
+      <option value="">-- 드라이버 선택 --</option>
+    </select>
+    <button class="btn btn-success" id="upgradeBtn" onclick="upgradeDriver()" disabled>⚡ 즉시 업데이트</button>
+    <div class="result" id="result">-</div>
+  </div>
+
+  <div class="card">
+    <div class="card-title">📋 설치된 드라이버 목록</div>
+    <div id="driverList"><span style="font-size:11px;color:#4a5568">Hub를 선택하면 목록이 표시됩니다.</span></div>
+  </div>
+</div>
+
+<script>
+var ST_API = 'https://api.smartthings.com/v1';
+
+// URL 파라미터에서 버전 표시
+var urlParams = new URLSearchParams(location.search);
+var ver = urlParams.get('v');
+if (ver) document.getElementById('ver-label').textContent = 'v ' + ver;
+
+function setStatus(msg, cls) {
+  document.getElementById('status-text').textContent = msg;
+  document.getElementById('status').className = cls || '';
+}
+function setResult(msg, color) {
+  var el = document.getElementById('result');
+  el.textContent = msg;
+  el.style.color = color || '#a0aec0';
+}
+
+function getPat() {
+  try { return localStorage.getItem('st_pat') || ''; } catch(e) { return ''; }
+}
+
+function savePat() {
+  var pat = document.getElementById('patInput').value.trim();
+  if (!pat) { document.getElementById('pat-status').textContent = 'PAT를 입력하세요.'; return; }
+  try { localStorage.setItem('st_pat', pat); } catch(e) {}
+  document.getElementById('patInput').value = '';
+  updatePatStatus();
+  loadHubs();
+}
+
+function updatePatStatus() {
+  var pat = getPat();
+  var el = document.getElementById('pat-status');
+  if (pat) {
+    el.textContent = '✅ PAT 저장됨: ' + pat.substring(0, 8) + '...';
+    el.style.color = '#68d391';
+  } else {
+    el.textContent = '저장된 PAT가 없습니다.';
+    el.style.color = '#fc8181';
+  }
+}
+
+async function patFetch(path, opts) {
+  var pat = getPat();
+  if (!pat) throw new Error('PAT가 없습니다.');
+  opts = opts || {};
+  var headers = Object.assign(
+    { 'Authorization': 'Bearer ' + pat, 'Content-Type': 'application/json' },
+    opts.headers || {}
+  );
+  return fetch(ST_API + path, Object.assign({}, opts, { headers: headers }));
+}
+
+async function loadHubs() {
+  if (!getPat()) return;
+  try {
+    var res = await patFetch('/devices?type=HUB');
+    if (!res.ok) throw new Error('Hub 목록을 불러오지 못했습니다. (' + res.status + ')');
+    var data = await res.json();
+    document.getElementById('hubSel').innerHTML =
+      '<option value="">-- Hub 선택 --</option>' +
+      (data.items || []).map(function(h) {
+        return '<option value="' + h.deviceId + '">' + h.label + '</option>';
+      }).join('');
+  } catch (e) {
+    setStatus('Hub 목록 조회 실패', 'error');
+    setResult(e.message, '#fc8181');
+  }
+}
+
+async function loadInstalledDrivers() {
+  var hubId = document.getElementById('hubSel').value;
+  var driverSel = document.getElementById('driverSel');
+  var upgradeBtn = document.getElementById('upgradeBtn');
+
+  driverSel.innerHTML = '<option value="">-- 불러오는 중 --</option>';
+  upgradeBtn.disabled = true;
+  document.getElementById('driverList').innerHTML = '<span style="font-size:11px;color:#4a5568">불러오는 중...</span>';
+
+  if (!hubId) {
+    driverSel.innerHTML = '<option value="">-- 드라이버 선택 --</option>';
+    document.getElementById('driverList').innerHTML = '<span style="font-size:11px;color:#4a5568">Hub를 선택하면 목록이 표시됩니다.</span>';
+    return;
+  }
+
+  try {
+    var res = await patFetch('/hubdevices/' + hubId + '/drivers');
+    if (!res.ok) throw new Error('드라이버 목록을 불러오지 못했습니다. (' + res.status + ')');
+
+    var installedDrivers = await res.json();
+    var custom = installedDrivers.filter(function(d) { return !d.isWWST; });
+
+    driverSel.innerHTML = '<option value="">-- 드라이버 선택 --</option>' +
+      custom.map(function(d) {
+        return '<option value="' + d.driverId + '" data-channel="' + d.channelId + '">' + d.name + '</option>';
+      }).join('');
+
+    upgradeBtn.disabled = custom.length === 0;
+
+    var listEl = document.getElementById('driverList');
+    if (!custom.length) {
+      listEl.innerHTML = '<span style="font-size:11px;color:#4a5568">커스텀 드라이버 없음</span>';
+      return;
+    }
+    listEl.innerHTML = custom.map(function(d) {
+      var ver = d.version ? d.version.substring(0, 10) : '-';
+      return '<div class="driver-item">' +
+        '<div><div class="driver-name">' + d.name + '</div>' +
+        '<div class="driver-ver">' + ver + '</div></div>' +
+        '<span class="driver-ch">커스텀</span>' +
+        '</div>';
+    }).join('');
+  } catch (e) {
+    driverSel.innerHTML = '<option value="">-- 오류 발생 --</option>';
+    setResult('드라이버 목록 조회 실패: ' + e.message, '#fc8181');
+  }
+}
+
+async function upgradeDriver() {
+  var hubId = document.getElementById('hubSel').value;
+  var sel = document.getElementById('driverSel');
+  var driverId = sel.value;
+  var opt = sel.options[sel.selectedIndex];
+  var channelId = opt ? opt.getAttribute('data-channel') : '';
+
+  if (!hubId || !driverId || !channelId) { setResult('Hub와 드라이버를 선택하세요.', '#fc8181'); return; }
+  var pat = getPat();
+  if (!pat) { setResult('PAT를 먼저 입력하세요.', '#fc8181'); return; }
+
+  setResult('업데이트 중... (1/2) 채널 동기화', '#f6ad55');
+  setStatus('업데이트 중...', 'loading');
+
+  try {
+    var r1 = await fetch(ST_API + '/distchannels/' + channelId + '/hubs/' + hubId, {
+      method: 'POST',
+      headers: { 'Authorization': 'Bearer ' + pat, 'Content-Type': 'application/json' }
+    });
+    if (r1.status !== 204 && !r1.ok) {
+      var e1 = await r1.text();
+      setResult('❌ 1단계 실패 (' + r1.status + '): ' + e1, '#fc8181');
+      setStatus('업데이트 실패', 'error'); return;
+    }
+
+    setResult('업데이트 중... (2/2) 드라이버 설치', '#f6ad55');
+    var r2 = await fetch(ST_API + '/hubdevices/' + hubId + '/drivers/' + driverId, {
+      method: 'PUT',
+      headers: { 'Authorization': 'Bearer ' + pat, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ channelId: channelId })
+    });
+
+    if (r2.status === 204 || r2.ok) {
+      setResult('✅ 업데이트 완료! 허브에 최신 버전이 설치됩니다.', '#68d391');
+      setStatus('업데이트 완료', 'ok');
+    } else {
+      var e2 = await r2.text();
+      setResult('❌ 2단계 실패 (' + r2.status + '): ' + e2, '#fc8181');
+      setStatus('업데이트 실패', 'error');
+    }
+  } catch (e) {
+    setResult('❌ 오류: ' + e.message, '#fc8181');
+    setStatus('오류 발생', 'error');
+  }
+}
+
+async function init() {
+  updatePatStatus();
+  if (getPat()) {
+    setStatus('PAT 준비 완료', 'ok');
+    await loadHubs();
+  } else {
+    setStatus('PAT를 입력해 주세요', 'error');
+  }
+}
+
+init();
+</script>
+</body>
+</html>
