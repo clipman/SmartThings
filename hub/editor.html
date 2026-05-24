@@ -264,7 +264,13 @@
 <script>
 // ──────────────────────────────────────────────
 //  URL 파라미터 파싱
-//  ?bridge=http://192.168.x.x:8088&d=DEVICE_ID&f=prompt
+//  ?bridge=http://host:8088&d=DEVICE_ID&f=prompt
+//
+//  ※ 외부 접근 지원:
+//     bridge URL이 외부에서 접근 가능한 주소(DDNS/포트포워딩 등)이면
+//     외부에서도 동일하게 동작합니다.
+//     페이지 로드 및 저장 시마다 /api/smartthings/access-token을
+//     호출하여 항상 최신 토큰을 사용합니다.
 // ──────────────────────────────────────────────
 const params     = new URLSearchParams(location.search);
 const BRIDGE_URL = (params.get('bridge') || '').replace(/\/$/, '');
@@ -313,17 +319,16 @@ function showToast(msg, type = 'ok') {
 
 // ──────────────────────────────────────────────
 //  브리지서버에서 Access Token 조회
+//  - 페이지 로드/저장 시마다 항상 최신 토큰을 가져옴
+//  - 토큰 만료 60초 전이면 미리 갱신
+//  - 네트워크 오류 시 1회 재시도
 // ──────────────────────────────────────────────
-let cachedToken = null;
+let cachedToken    = null;
 let tokenExpiresAt = 0;
 
-async function getToken() {
-  if (cachedToken && Date.now() < tokenExpiresAt - 60000) return cachedToken;
-
-  if (!BRIDGE_URL) throw new Error('bridge 파라미터가 없습니다.');
-
+async function fetchTokenFromBridge() {
   const res = await fetch(BRIDGE_URL + '/api/smartthings/access-token', {
-    method: 'POST',
+    method:  'POST',
     headers: { 'Content-Type': 'application/json' },
   });
 
@@ -331,12 +336,30 @@ async function getToken() {
 
   const data = await res.json();
   if (!data.authenticated || !data.accessToken) {
-    throw new Error('SmartThings 인증 정보 없음');
+    throw new Error('SmartThings 인증 정보 없음 — 브리지서버에서 재인증이 필요합니다.');
   }
 
   cachedToken    = data.accessToken;
-  tokenExpiresAt = data.expiresAt || (Date.now() + data.minutesLeft * 60000);
+  // expiresAt(ms) 또는 minutesLeft(분) 중 제공되는 값 사용
+  tokenExpiresAt = data.expiresAt
+    || (data.minutesLeft ? Date.now() + data.minutesLeft * 60_000 : Date.now() + 55 * 60_000);
   return cachedToken;
+}
+
+async function getToken() {
+  if (!BRIDGE_URL) throw new Error('bridge 파라미터가 없습니다.');
+
+  // 캐시된 토큰이 아직 유효하면(만료 60초 이상 남음) 재사용
+  if (cachedToken && Date.now() < tokenExpiresAt - 60_000) return cachedToken;
+
+  // 만료됐거나 없으면 브리지서버에서 새로 가져옴 (1회 재시도)
+  try {
+    return await fetchTokenFromBridge();
+  } catch (e) {
+    // 일시적 네트워크 오류일 수 있으므로 1초 후 1회 재시도
+    await new Promise(r => setTimeout(r, 1000));
+    return await fetchTokenFromBridge();
+  }
 }
 
 // ──────────────────────────────────────────────
@@ -361,10 +384,11 @@ async function loadDeviceInfo(token) {
 // ──────────────────────────────────────────────
 async function loadCurrentValue() {
   setStatus('loading', '현재 값 읽는 중...');
-  editor.disabled = true;
+  editor.disabled  = true;
   btnSave.disabled = true;
 
   try {
+    // 항상 최신 토큰을 브리지서버에서 확인
     const token = await getToken();
     await loadDeviceInfo(token);
 
@@ -380,12 +404,12 @@ async function loadCurrentValue() {
 
     if (!res.ok) throw new Error('상태 조회 실패: ' + res.status);
 
-    const data = await res.json();
-    const attr = data[fieldCfg.attribute];
+    const data  = await res.json();
+    const attr  = data[fieldCfg.attribute];
     const value = attr && attr.value !== undefined ? attr.value : '';
 
-    editor.value    = typeof value === 'string' ? value : '';
-    editor.disabled = false;
+    editor.value     = typeof value === 'string' ? value : '';
+    editor.disabled  = false;
     btnSave.disabled = false;
     editor.focus();
 
@@ -401,6 +425,7 @@ async function loadCurrentValue() {
 
 // ──────────────────────────────────────────────
 //  저장
+//  저장 시에도 항상 최신 토큰을 브리지서버에서 가져와 사용
 // ──────────────────────────────────────────────
 async function saveValue() {
   const value = editor.value;
@@ -408,6 +433,7 @@ async function saveValue() {
   setStatus('loading', '저장 중...');
 
   try {
+    // 저장 직전에도 토큰 갱신 여부 확인
     const token = await getToken();
 
     const body = {
