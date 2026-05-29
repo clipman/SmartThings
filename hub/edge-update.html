@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>SmartThings Edge 드라이버 업데이트</title>
+<title>스마트싱스 엣지드라이버 업데이트</title>
 <style>
 *{box-sizing:border-box;margin:0;padding:0}
 body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;background:#0f1117;color:#e2e8f0;min-height:100vh}
@@ -24,17 +24,21 @@ input:focus,select:focus{border-color:#63b3ed}
 .btn-success{background:#1c4532;color:#68d391}.btn-success:active{background:#174130}
 .btn:disabled{opacity:0.4;cursor:not-allowed}
 .result{background:#0a0d14;border:1px solid #2d3748;border-radius:6px;padding:10px;font-size:11px;color:#a0aec0;margin-top:8px;line-height:1.6;min-height:36px}
-.driver-item{display:flex;justify-content:space-between;align-items:center;padding:6px 0;border-bottom:1px solid #1e2535;font-size:12px}
+.driver-item{display:flex;justify-content:space-between;align-items:center;padding:8px 10px;border-bottom:1px solid #1e2535;font-size:12px;border-radius:6px;cursor:pointer;transition:background .15s}
 .driver-item:last-child{border-bottom:none}
+.driver-item:hover{background:#1e2a3a}
+.driver-item:active{background:#2b3a50}
+.driver-item.updating{opacity:0.6;cursor:not-allowed;pointer-events:none}
 .driver-name{color:#e2e8f0;font-weight:600}
 .driver-ver{color:#4a5568;font-size:10px;margin-top:2px}
-.driver-ch{font-size:10px;color:#2d6a4f;background:#1a2e1a;padding:2px 6px;border-radius:10px}
+.driver-ch{font-size:10px;color:#2d6a4f;background:#1a2e1a;padding:2px 6px;border-radius:10px;white-space:nowrap}
+.driver-ch.updating-badge{color:#f6ad55;background:#2d2a1a}
 </style>
 </head>
 <body>
 <div class="header">
   <span style="font-size:20px">⚙️</span>
-  <h1>SmartThings 엣지 드라이버 업데이트</h1>
+  <h1>스마트싱스 엣지드라이버 업데이트</h1>
   <span class="ver" id="ver-label"></span>
 </div>
 <div id="status" class="loading">
@@ -44,7 +48,7 @@ input:focus,select:focus{border-color:#63b3ed}
 <div class="body">
   <div class="card">
     <div class="card-title">🔑 Personal Access Token</div>
-    <div class="card-hint">드라이버 업데이트에 PAT가 필요합니다. <a href="https://account.smartthings.com/tokens" target="_blank" style="color:#63b3ed">발급 페이지</a>에서 모든 권한을 선택하여 발급하세요.</div>
+    <div class="card-hint">드라이버 업데이트에 PAT가 필요합니다. <a href="https://account.smartthings.com/tokens" target="_blank" style="color:#63b3ed">발급 페이지</a>에서 "장치/Channels" 권한을 선택하여 발급하세요.</div>
     <label>PAT 토큰 입력</label>
     <div style="display:flex;gap:6px">
       <input type="password" id="patInput" placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx" style="margin-bottom:0;flex:1">
@@ -60,11 +64,6 @@ input:focus,select:focus{border-color:#63b3ed}
     <select id="hubSel" onchange="loadInstalledDrivers()">
       <option value="">-- Hub 선택 --</option>
     </select>
-    <label>설치된 드라이버</label>
-    <select id="driverSel">
-      <option value="">-- 드라이버 선택 --</option>
-    </select>
-    <button class="btn btn-success" id="upgradeBtn" onclick="upgradeDriver()" disabled>⚡ 즉시 업데이트</button>
     <div class="result" id="result">-</div>
   </div>
 
@@ -152,16 +151,13 @@ async function loadHubs() {
 
 async function loadInstalledDrivers() {
   var hubId = document.getElementById('hubSel').value;
-  var driverSel = document.getElementById('driverSel');
-  var upgradeBtn = document.getElementById('upgradeBtn');
+  var listEl = document.getElementById('driverList');
 
-  driverSel.innerHTML = '<option value="">-- 불러오는 중 --</option>';
-  upgradeBtn.disabled = true;
-  document.getElementById('driverList').innerHTML = '<span style="font-size:11px;color:#4a5568">불러오는 중...</span>';
+  listEl.innerHTML = '<span style="font-size:11px;color:#4a5568">불러오는 중...</span>';
+  setResult('-');
 
   if (!hubId) {
-    driverSel.innerHTML = '<option value="">-- 드라이버 선택 --</option>';
-    document.getElementById('driverList').innerHTML = '<span style="font-size:11px;color:#4a5568">Hub를 선택하면 목록이 표시됩니다.</span>';
+    listEl.innerHTML = '<span style="font-size:11px;color:#4a5568">Hub를 선택하면 목록이 표시됩니다.</span>';
     return;
   }
 
@@ -172,44 +168,43 @@ async function loadInstalledDrivers() {
     var installedDrivers = await res.json();
     var custom = installedDrivers.filter(function(d) { return !d.isWWST; });
 
-    driverSel.innerHTML = '<option value="">-- 드라이버 선택 --</option>' +
-      custom.map(function(d) {
-        return '<option value="' + d.driverId + '" data-channel="' + d.channelId + '">' + d.name + '</option>';
-      }).join('');
+    // 오름차순 정렬
+    custom.sort(function(a, b) { return a.name.localeCompare(b.name, 'ko'); });
 
-    upgradeBtn.disabled = custom.length === 0;
-
-    var listEl = document.getElementById('driverList');
     if (!custom.length) {
       listEl.innerHTML = '<span style="font-size:11px;color:#4a5568">커스텀 드라이버 없음</span>';
       return;
     }
+
     listEl.innerHTML = custom.map(function(d) {
       var ver = d.version ? d.version.substring(0, 10) : '-';
-      return '<div class="driver-item">' +
+      return '<div class="driver-item" id="item-' + d.driverId + '" ' +
+        'onclick="upgradeDriver(\'' + d.driverId + '\',\'' + d.channelId + '\',\'' + d.name.replace(/'/g, "\\'") + '\')">' +
         '<div><div class="driver-name">' + d.name + '</div>' +
         '<div class="driver-ver">' + ver + '</div></div>' +
-        '<span class="driver-ch">커스텀</span>' +
+        '<span class="driver-ch" id="badge-' + d.driverId + '">⚡ 클릭하여 업데이트</span>' +
         '</div>';
     }).join('');
   } catch (e) {
-    driverSel.innerHTML = '<option value="">-- 오류 발생 --</option>';
+    listEl.innerHTML = '<span style="font-size:11px;color:#fc8181">오류: ' + e.message + '</span>';
     setResult('드라이버 목록 조회 실패: ' + e.message, '#fc8181');
   }
 }
 
-async function upgradeDriver() {
+async function upgradeDriver(driverId, channelId, driverName) {
   var hubId = document.getElementById('hubSel').value;
-  var sel = document.getElementById('driverSel');
-  var driverId = sel.value;
-  var opt = sel.options[sel.selectedIndex];
-  var channelId = opt ? opt.getAttribute('data-channel') : '';
 
   if (!hubId || !driverId || !channelId) { setResult('Hub와 드라이버를 선택하세요.', '#fc8181'); return; }
   var pat = getPat();
   if (!pat) { setResult('PAT를 먼저 입력하세요.', '#fc8181'); return; }
 
-  setResult('업데이트 중... (1/2) 채널 동기화', '#f6ad55');
+  // 아이템 UI 업데이트
+  var itemEl = document.getElementById('item-' + driverId);
+  var badgeEl = document.getElementById('badge-' + driverId);
+  if (itemEl) itemEl.classList.add('updating');
+  if (badgeEl) { badgeEl.textContent = '업데이트 중...'; badgeEl.className = 'driver-ch updating-badge'; }
+
+  setResult('[' + driverName + '] 업데이트 중... (1/2) 채널 동기화', '#f6ad55');
   setStatus('업데이트 중...', 'loading');
 
   try {
@@ -220,10 +215,13 @@ async function upgradeDriver() {
     if (r1.status !== 204 && !r1.ok) {
       var e1 = await r1.text();
       setResult('❌ 1단계 실패 (' + r1.status + '): ' + e1, '#fc8181');
-      setStatus('업데이트 실패', 'error'); return;
+      setStatus('업데이트 실패', 'error');
+      if (itemEl) itemEl.classList.remove('updating');
+      if (badgeEl) { badgeEl.textContent = '⚡ 클릭하여 업데이트'; badgeEl.className = 'driver-ch'; }
+      return;
     }
 
-    setResult('업데이트 중... (2/2) 드라이버 설치', '#f6ad55');
+    setResult('[' + driverName + '] 업데이트 중... (2/2) 드라이버 설치', '#f6ad55');
     var r2 = await fetch(proxyUrl('/hubdevices/' + hubId + '/drivers/' + driverId), {
       method: 'PUT',
       headers: { 'Authorization': 'Bearer ' + pat, 'Content-Type': 'application/json' },
@@ -231,16 +229,22 @@ async function upgradeDriver() {
     });
 
     if (r2.status === 204 || r2.ok) {
-      setResult('✅ 업데이트 완료! 허브에 최신 버전이 설치됩니다.', '#68d391');
+      setResult('✅ [' + driverName + '] 업데이트 완료! 허브에 최신 버전이 설치됩니다.', '#68d391');
       setStatus('업데이트 완료', 'ok');
+      if (badgeEl) { badgeEl.textContent = '✅ 완료'; badgeEl.className = 'driver-ch'; badgeEl.style.color='#68d391'; }
+      if (itemEl) itemEl.classList.remove('updating');
     } else {
       var e2 = await r2.text();
       setResult('❌ 2단계 실패 (' + r2.status + '): ' + e2, '#fc8181');
       setStatus('업데이트 실패', 'error');
+      if (itemEl) itemEl.classList.remove('updating');
+      if (badgeEl) { badgeEl.textContent = '⚡ 클릭하여 업데이트'; badgeEl.className = 'driver-ch'; }
     }
   } catch (e) {
     setResult('❌ 오류: ' + e.message, '#fc8181');
     setStatus('오류 발생', 'error');
+    if (itemEl) itemEl.classList.remove('updating');
+    if (badgeEl) { badgeEl.textContent = '⚡ 클릭하여 업데이트'; badgeEl.className = 'driver-ch'; }
   }
 }
 
