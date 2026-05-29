@@ -225,7 +225,7 @@ async function upgradeDriver() {
 
     setResult('업데이트 중... (2/2) 드라이버 설치', '#f6ad55');
     var r2 = await fetch(proxyUrl('/hubdevices/' + hubId + '/drivers/' + driverId), {
-      method: 'POST',
+      method: 'PUT',
       headers: { 'Authorization': 'Bearer ' + pat, 'Content-Type': 'application/json' }
     });
     
