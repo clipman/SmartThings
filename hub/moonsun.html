@@ -109,8 +109,9 @@
 // ── 프록시 설정 ──────────────────────────────────────────────
 // timeanddate.com은 CORS를 허용하지 않으므로 프록시 경유
 // var MOON_CORS      = 'https://corsproxy.io/?';
+// var MOON_IMG_PROXY = 'https://small-cloud-4849.clipman-076.workers.dev/img?url=';
 var MOON_CORS      = '';
-var MOON_IMG_PROXY = 'https://small-cloud-4849.clipman-076.workers.dev/img?url=';
+var MOON_IMG_PROXY = '';
 
 // ── URL 파라미터 ─────────────────────────────────────────────
 var _params = new URLSearchParams(window.location.search);
@@ -292,12 +293,15 @@ function parseMoon(html) {
 async function fetchMoonImage(moonUrl) {
   if (!moonUrl) return '';
   try {
-    var proxied = moonUrl.replace(
-      'https://www.timeanddate.com/scripts',
-      'https://letsflyhome.duckdns.org/moon'
-    );
-    var proxyUrl = MOON_IMG_PROXY + encodeURIComponent(proxied);
-    log('달 이미지 fetch: ' + proxied);
+    // var proxied = moonUrl.replace(
+    //   'https://www.timeanddate.com/scripts',
+    //   'https://letsflyhome.duckdns.org/moon'
+    // );
+    // var proxyUrl = MOON_IMG_PROXY + encodeURIComponent(proxied);
+    // log('달 이미지 fetch: ' + proxied);
+    var proxyUrl = moonUrl;
+    log('달 이미지 fetch: ' + proxyUrl);
+
     var res = await fetchWithTimeout(proxyUrl, 8000);
     var blob = await res.blob();
     if (!blob.type.startsWith('image/')) throw new Error('image 아님: ' + blob.type);
