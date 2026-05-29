@@ -295,11 +295,10 @@ async function fetchMoonImage(moonUrl) {
     //   'https://www.timeanddate.com/scripts',
     //   'https://letsflyhome.duckdns.org/moon'
     // );
-    // var proxyUrl = MOON_IMG_PROXY + encodeURIComponent(proxied);
-    // log('달 이미지 fetch: ' + proxied);
-    var proxyUrl = moonUrl;
-    log('달 이미지 fetch: ' + proxyUrl);
+    var proxied = moonUrl;
 
+    var proxyUrl = MOON_IMG_PROXY + encodeURIComponent(proxied);
+    log('달 이미지 fetch: ' + proxied);
     var res = await fetchWithTimeout(proxyUrl, 8000);
     var blob = await res.blob();
     if (!blob.type.startsWith('image/')) throw new Error('image 아님: ' + blob.type);
