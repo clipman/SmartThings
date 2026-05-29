@@ -225,12 +225,11 @@ async function upgradeDriver() {
 
     setResult('업데이트 중... (2/2) 드라이버 설치', '#f6ad55');
     var r2 = await fetch(proxyUrl('/hubdevices/' + hubId + '/drivers/' + driverId), {
-      method: 'PUT',
-      headers: { 'Authorization': 'Bearer ' + pat, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ channelId: channelId })
+      method: 'POST',
+      headers: { 'Authorization': 'Bearer ' + pat, 'Content-Type': 'application/json' }
     });
-
-    if (r2.status === 204 || r2.ok) {
+    
+    if (r2.status === 204 || r2.status === 200 || r2.ok) {
       setResult('✅ 업데이트 완료! 허브에 최신 버전이 설치됩니다.', '#68d391');
       setStatus('업데이트 완료', 'ok');
     } else {
