@@ -1,0 +1,417 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>SmartThings MoonSun Bridge</title>
+<style>
+  :root {
+    --bg: #0d1117; --surface: #161b22; --border: #30363d;
+    --text: #e6edf3; --muted: #8b949e; --accent: #58a6ff;
+    --ok: #3fb950; --warn: #d29922; --err: #f85149;
+    --radius: 10px; --font: 'SF Mono','Fira Code','Consolas',monospace;
+  }
+  * { box-sizing: border-box; margin: 0; }
+  html, body { background: var(--bg); color: var(--text); font-family: var(--font); font-size: 13px; line-height: 1.6; }
+  body { padding: 20px; max-width: 680px; margin: 0 auto; }
+  h1 { font-size: 15px; color: var(--accent); margin-bottom: 16px; letter-spacing: .04em; }
+  .tag { display: inline-block; padding: 1px 7px; border-radius: 4px; font-size: 11px; font-weight: 600; margin-left: 8px; }
+  .tag-run  { background: #1f3a28; color: var(--ok); }
+  .tag-err  { background: #3a1f1f; color: var(--err); }
+  .tag-wait { background: #2a2a1f; color: var(--warn); }
+  .log-box { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 14px 16px; margin-bottom: 12px; max-height: 260px; overflow-y: auto; }
+  .log-line { padding: 1px 0; white-space: pre-wrap; word-break: break-all; }
+  .log-line.ok   { color: var(--ok); }
+  .log-line.warn { color: var(--warn); }
+  .log-line.err  { color: var(--err); }
+  .log-line.info { color: var(--muted); }
+  .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 12px; }
+  .card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 12px 14px; }
+  .card-title { font-size: 11px; color: var(--muted); margin-bottom: 6px; text-transform: uppercase; letter-spacing: .06em; }
+  .card-val { font-size: 20px; color: var(--text); }
+  .card-sub { font-size: 11px; color: var(--muted); margin-top: 2px; }
+  .result-box { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 14px 16px; }
+  .result-box pre { white-space: pre-wrap; word-break: break-all; color: var(--text); font-family: var(--font); font-size: 12px; }
+  #moon-img { width: 80px; height: 80px; border-radius: 50%; margin-top: 6px; }
+</style>
+</head>
+<body>
+
+<h1>🌙 SmartThings MoonSun Bridge <span id="tag" class="tag tag-wait">실행 중...</span></h1>
+
+<div class="log-box" id="logbox"></div>
+
+<div class="grid" id="preview" style="display:none">
+  <div class="card">
+    <div class="card-title">달 이름 / 밝기</div>
+    <div class="card-val" id="pv-moonname">--</div>
+    <div class="card-sub" id="pv-moonface">--%</div>
+    <img id="moon-img" style="display:none">
+  </div>
+  <div class="card">
+    <div class="card-title">월출 / 달 방향·고도</div>
+    <div class="card-val" id="pv-moonrise">--:--</div>
+    <div class="card-sub" id="pv-moondir">방향 -- / 고도 --°</div>
+  </div>
+  <div class="card">
+    <div class="card-title">일출 / 일몰</div>
+    <div class="card-val" id="pv-sunrise">--:--</div>
+    <div class="card-sub" id="pv-sunset">일몰 --:--</div>
+  </div>
+  <div class="card">
+    <div class="card-title">태양 방향·고도</div>
+    <div class="card-val" id="pv-sundir">--°</div>
+    <div class="card-sub" id="pv-sunelev">고도 --°</div>
+  </div>
+</div>
+
+<div class="result-box" id="result-box" style="display:none">
+  <pre id="result-json"></pre>
+</div>
+
+<script>
+// ════════════════════════════════════════════════════════════════
+//  SmartThings MoonSun Bridge — moonsun.html
+//
+//  동작:
+//    1. URL 파라미터에서 lat, lon 읽기
+//    2. timeanddate.com/astronomy 페이지를 CORS 프록시로 fetch → parseMoon()
+//    3. 달 이미지를 이미지 프록시로 fetch → base64 변환
+//    4. 결과를 window.__result 에 저장 (브리지가 수집)
+//
+//  브리지 호출 형식:
+//    GET /api/webview
+//        ?url=https://clipman.github.io/.../moonsun.html
+//            ?lat=37.57&lon=126.97
+//        &timeout=60
+//
+//  반환 JSON 구조 (window.__result):
+//  {
+//    "ok": true,
+//    "timestamp": 1716000000000,
+//    "moonsun": {
+//      "moonName":       "보름달",
+//      "moonFace":       98,
+//      "moonUrl":        "https://...",
+//      "moonImageData":  "data:image/png;base64,...",
+//      "moonHeading":    245,
+//      "moonHeadingDir": "서남서",
+//      "moonElevation":  32,
+//      "moonrise":       "21:14",
+//      "sunHeading":     180,
+//      "sunElevation":   45,
+//      "sunrise":        "05:45",
+//      "sunset":         "19:32"
+//    }
+//  }
+// ════════════════════════════════════════════════════════════════
+
+// ── 프록시 설정 ──────────────────────────────────────────────
+// timeanddate.com은 CORS를 허용하지 않으므로 프록시 경유
+var MOON_CORS      = 'https://corsproxy.io/?';
+var MOON_IMG_PROXY = 'https://small-cloud-4849.clipman-076.workers.dev/img?url=';
+
+// ── URL 파라미터 ─────────────────────────────────────────────
+var _params = new URLSearchParams(window.location.search);
+var LAT = _params.get('lat') || '37.57';
+var LON = _params.get('lon') || '126.97';
+
+// ── 로그 유틸 ────────────────────────────────────────────────
+var _logbox = document.getElementById('logbox');
+function log(msg, cls) {
+  var d = document.createElement('div');
+  d.className = 'log-line ' + (cls || 'info');
+  d.textContent = '[' + new Date().toLocaleTimeString('ko-KR') + '] ' + msg;
+  _logbox.appendChild(d);
+  _logbox.scrollTop = _logbox.scrollHeight;
+  console.log(msg);
+}
+
+// ── 달 위상 영문 → 한국어 ────────────────────────────────────
+var MOON_KO = {
+  'New Moon':       '삭',        'Waxing Crescent': '초승달',
+  'First Quarter':  '반달(상)',  'Waxing Gibbous':  '상현달',
+  'Full Moon':      '보름달',    'Waning Gibbous':  '하현달',
+  'Third Quarter':  '반달(하)',  'Waning Crescent': '그믐달',
+};
+
+// ── 방위각(0-360°) → 16방위 ──────────────────────────────────
+function windDir(deg) {
+  var dirs = ['북','북북동','북동','동북동','동','동남동','남동','남남동',
+              '남','남남서','남서','서남서','서','서북서','북서','북북서'];
+  return dirs[Math.floor((deg + 11.25) / 22.5) % 16] || '북';
+}
+
+// ── 시각 문자열 → "HH:MM" 24시간 정규화 ─────────────────────
+// old.lua의 원문 보존 방식보다 api_moonsun.lua의 24h 정규화가 더 안정적
+function parseTime(text) {
+  text = String(text || '').trim();
+  // 한국어: "오전 6:12" / "오후 3:45"
+  var mKo = text.match(/([오전후]+)\s+(\d{1,2}):(\d{2})/);
+  if (mKo) {
+    var h = parseInt(mKo[2]), m = parseInt(mKo[3]);
+    if (mKo[1].indexOf('오후') >= 0 && h !== 12) h += 12;
+    else if (mKo[1].indexOf('오전') >= 0 && h === 12) h = 0;
+    return (h < 10 ? '0' : '') + h + ':' + (m < 10 ? '0' : '') + m;
+  }
+  // 영어: "6:12 am" / "3:45 PM"
+  var mEn = text.match(/(\d{1,2}):(\d{2})\s*([aApP][mM])/);
+  if (mEn) {
+    var h = parseInt(mEn[1]), m = parseInt(mEn[2]), ap = mEn[3].toLowerCase();
+    if (ap === 'pm' && h !== 12) h += 12;
+    else if (ap === 'am' && h === 12) h = 0;
+    return (h < 10 ? '0' : '') + h + ':' + (m < 10 ? '0' : '') + m;
+  }
+  // 24시간: "06:12"
+  var m24 = text.match(/(\d{1,2}):(\d{2})/);
+  if (m24) {
+    return (parseInt(m24[1]) < 10 ? '0' : '') + parseInt(m24[1]) + ':' + m24[2];
+  }
+  return '--:--';
+}
+
+// ── fetch with timeout ──────────────────────────────────────
+async function fetchWithTimeout(url, timeoutMs, opts) {
+  timeoutMs = timeoutMs || 20000;
+  var ctrl  = new AbortController();
+  var timer = setTimeout(function() { ctrl.abort(); }, timeoutMs);
+  try {
+    var res = await fetch(url, Object.assign({ signal: ctrl.signal }, opts || {}));
+    if (!res.ok) throw new Error('HTTP ' + res.status);
+    return res;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+// ════════════════════════════════════════════════════════════
+//  parseMoon(html)
+//  old.lua의 querySelector 기반 파서 채택 (api_moonsun Lua 정규식보다 정확)
+//  시각 정규화는 parseTime()으로 24h HH:MM 변환
+// ════════════════════════════════════════════════════════════
+function parseMoon(html) {
+  var doc = new DOMParser().parseFromString(html, 'text/html');
+
+  // ── 달 밝기 ────────────────────────────────────────────────
+  // #cur-moon-percent (old.lua) 우선, 폴백으로 #cm-illum (api_moonsun)
+  var faceEl  = doc.querySelector('#cur-moon-percent') || doc.querySelector('#cm-illum');
+  var moonFace = faceEl ? (parseInt(faceEl.textContent.trim()) || 0) : 0;
+
+  // ── 달 이름 ────────────────────────────────────────────────
+  var nameEl     = doc.querySelector('#qlook a');
+  var moonNameEn = nameEl ? nameEl.textContent.trim() : '';
+  // data-phase 폴백 (api_moonsun 전략 2)
+  if (!moonNameEn) {
+    var phaseEl = doc.querySelector('[data-phase]');
+    if (phaseEl) moonNameEn = phaseEl.getAttribute('data-phase') || '';
+  }
+  var moonName = MOON_KO[moonNameEn] || moonNameEn;
+
+  // ── 달 이미지 URL ──────────────────────────────────────────
+  var imgEl   = doc.querySelector('#cur-moon');
+  var moonSrc = imgEl ? (imgEl.getAttribute('src') || '') : '';
+  var moonUrl = '';
+  if (moonSrc) {
+    moonUrl = moonSrc.startsWith('http')
+      ? moonSrc
+      : 'https://www.timeanddate.com' + moonSrc;
+    // 파라미터 정밀도 정규화 (캐시 효율 개선, api_moonsun 방식)
+    moonUrl = moonUrl
+      .replace(/([i])=([\d.]+)/g,  function(_, k, v) { return k + '=' + parseFloat(v).toFixed(2); })
+      .replace(/([pr])=([\d.]+)/g, function(_, k, v) { return k + '=' + parseFloat(v).toFixed(1); });
+  }
+
+  // ── 달 방향 / 고도 ─────────────────────────────────────────
+  var headingEl   = doc.querySelector('#cm-heading');
+  var headingText = headingEl ? headingEl.textContent.trim() : '';
+  var degM        = headingText.match(/(\d+)/);
+  var moonHeading = degM ? parseInt(degM[1]) : 0;
+
+  var altEl       = doc.querySelector('#cm-altitude');
+  var altText     = altEl ? altEl.textContent.trim() : '';
+  var altM        = altText.match(/-?\d+\.?\d?/);
+  var moonElevation = altM ? Math.round(parseFloat(altM[0])) : 0;
+
+  // ── 태양 방향 / 고도 ───────────────────────────────────────
+  var csHEl     = doc.querySelector('#cs-heading');
+  var csHText   = csHEl ? csHEl.textContent.trim() : '';
+  var csHM      = csHText.match(/(\d+)/);
+  var sunHeading = csHM ? parseInt(csHM[1]) : 0;
+
+  var csAltEl   = doc.querySelector('#cs-altitude');
+  var csAltText = csAltEl ? csAltEl.textContent.trim() : '';
+  var csAltM    = csAltText.match(/-?\d+\.?\d?/);
+  var sunElevation = csAltM ? Math.round(parseFloat(csAltM[0])) : 0;
+
+  // ── 일출 / 일몰 / 월출 ────────────────────────────────────
+  // CSS 선택자 방식 (old.lua) → 24h 정규화(parseTime) 추가
+  var sunrise  = '--:--', sunset = '--:--', moonrise = '--:--';
+  var srEl  = doc.querySelector('.bk-focus__info table tbody tr:nth-child(2) td');
+  var ssEl  = doc.querySelector('.bk-focus__info table tbody tr:nth-child(3) td');
+  var mrEl  = doc.querySelector('.bk-focus__info table tbody tr:nth-child(4) td');
+  if (srEl) sunrise  = parseTime(srEl.textContent);
+  if (ssEl) sunset   = parseTime(ssEl.textContent);
+  if (mrEl) moonrise = parseTime(mrEl.textContent);
+
+  // 폴백: 키워드 직접 검색 (api_moonsun 전략 2)
+  if (sunrise === '--:--') {
+    var m = html.match(/[Ss]unrise[^\d]*(\d{1,2}:\d{2}\s*(?:[aApP][mM])?)/);
+    if (m) sunrise = parseTime(m[1]);
+  }
+  if (sunset === '--:--') {
+    var m = html.match(/[Ss]unset[^\d]*(\d{1,2}:\d{2}\s*(?:[aApP][mM])?)/);
+    if (m) sunset = parseTime(m[1]);
+  }
+  if (moonrise === '--:--') {
+    var m = html.match(/[Mm]oonrise[^\d]*(\d{1,2}:\d{2}\s*(?:[aApP][mM])?)/);
+    if (m) moonrise = parseTime(m[1]);
+  }
+
+  return {
+    moonFace:       moonFace,
+    moonName:       moonName,
+    moonNameEn:     moonNameEn,
+    moonUrl:        moonUrl,
+    moonHeading:    moonHeading,
+    moonHeadingDir: windDir(moonHeading),
+    moonElevation:  moonElevation,
+    moonrise:       moonrise,
+    sunHeading:     sunHeading,
+    sunElevation:   sunElevation,
+    sunrise:        sunrise,
+    sunset:         sunset,
+  };
+}
+
+// ════════════════════════════════════════════════════════════
+//  달 이미지 → base64
+//  MOON_IMG_PROXY 경유, Blob → FileReader
+//  scripts 경로를 letsflyhome.duckdns.org/moon 으로 교체 (api_moonsun 동일)
+// ════════════════════════════════════════════════════════════
+async function fetchMoonImage(moonUrl) {
+  if (!moonUrl) return '';
+  try {
+    var proxied = moonUrl.replace(
+      'https://www.timeanddate.com/scripts',
+      'https://letsflyhome.duckdns.org/moon'
+    );
+    var proxyUrl = MOON_IMG_PROXY + encodeURIComponent(proxied);
+    log('달 이미지 fetch: ' + proxied);
+    var res = await fetchWithTimeout(proxyUrl, 8000);
+    var blob = await res.blob();
+    if (!blob.type.startsWith('image/')) throw new Error('image 아님: ' + blob.type);
+    return await new Promise(function(resolve, reject) {
+      var reader = new FileReader();
+      reader.onload  = function() { resolve(reader.result); };
+      reader.onerror = function() { reject(new Error('FileReader 실패')); };
+      reader.readAsDataURL(blob);
+    });
+  } catch(e) {
+    log('달 이미지 fetch 실패: ' + e.message, 'warn');
+    return '';
+  }
+}
+
+// ── 미리보기 UI 업데이트 ─────────────────────────────────────
+function updatePreview(d) {
+  document.getElementById('preview').style.display = 'grid';
+  var s = function(id, v) { var el = document.getElementById(id); if (el) el.textContent = v; };
+  s('pv-moonname', d.moonName || '--');
+  s('pv-moonface', '밝기 ' + d.moonFace + '%');
+  s('pv-moonrise', '월출 ' + d.moonrise);
+  s('pv-moondir',  '방향 ' + d.moonHeadingDir + '(' + d.moonHeading + '°) / 고도 ' + d.moonElevation + '°');
+  s('pv-sunrise',  '일출 ' + d.sunrise);
+  s('pv-sunset',   '일몰 ' + d.sunset);
+  s('pv-sundir',   '방향 ' + windDir(d.sunHeading) + '(' + d.sunHeading + '°)');
+  s('pv-sunelev',  '고도 ' + d.sunElevation + '°');
+  if (d.moonImageData) {
+    var img = document.getElementById('moon-img');
+    img.src = d.moonImageData; img.style.display = 'block';
+  }
+}
+
+// ════════════════════════════════════════════════════════════
+//  메인
+// ════════════════════════════════════════════════════════════
+async function main() {
+  var tag = document.getElementById('tag');
+  log('lat=' + LAT + ', lon=' + LON);
+
+  // ── timeanddate.com fetch ────────────────────────────────
+  var ts  = Date.now();
+  var url = 'https://www.timeanddate.com/astronomy/@' + LAT + ',' + LON + '?_=' + ts;
+  log('timeanddate fetch: ' + url);
+
+  var moonData = null;
+  var errMsg   = null;
+
+  try {
+    var res  = await fetchWithTimeout(MOON_CORS + encodeURIComponent(url), 20000);
+    var html = await res.text();
+    moonData = parseMoon(html);
+    if (!moonData.moonName) throw new Error('달 이름 파싱 실패 (선택자 불일치 가능성)');
+    log('파싱 완료: ' + moonData.moonName + ' ' + moonData.moonFace + '% 월출=' + moonData.moonrise, 'ok');
+  } catch(e) {
+    errMsg = String(e && e.message || e || 'unknown');
+    log('timeanddate fetch/파싱 실패: ' + errMsg, 'err');
+  }
+
+  // ── 달 이미지 base64 ─────────────────────────────────────
+  var moonImageData = '';
+  if (moonData && moonData.moonUrl) {
+    moonImageData = await fetchMoonImage(moonData.moonUrl);
+    if (moonImageData) log('달 이미지 변환 완료 len=' + moonImageData.length, 'ok');
+  }
+
+  // ── 결과 구성 ────────────────────────────────────────────
+  var result;
+  if (moonData && moonData.moonName) {
+    result = {
+      ok: true,
+      timestamp: Date.now(),
+      moonsun: {
+        moonName:       moonData.moonName,
+        moonFace:       moonData.moonFace,
+        moonUrl:        moonData.moonUrl        || '',
+        moonImageData:  moonImageData,
+        moonHeading:    moonData.moonHeading,
+        moonHeadingDir: moonData.moonHeadingDir || '',
+        moonElevation:  moonData.moonElevation,
+        moonrise:       moonData.moonrise        || '--:--',
+        sunHeading:     moonData.sunHeading,
+        sunElevation:   moonData.sunElevation,
+        sunrise:        moonData.sunrise         || '--:--',
+        sunset:         moonData.sunset          || '--:--',
+      },
+    };
+    tag.className = 'tag tag-run'; tag.textContent = '완료';
+    updatePreview(Object.assign({}, result.moonsun));
+    log('window.__result 저장 완료', 'ok');
+  } else {
+    result = { ok: false, timestamp: Date.now(), error: errMsg || '데이터 없음', moonsun: {} };
+    tag.className = 'tag tag-err'; tag.textContent = '실패';
+    log('실패 결과 저장', 'err');
+  }
+
+  // ── 브리지가 읽어갈 결과 저장 ────────────────────────────
+  window.__result = result;
+
+  // 디버그 UI
+  document.getElementById('result-box').style.display = 'block';
+  var disp = Object.assign({}, result);
+  if (disp.moonsun) {
+    disp.moonsun = Object.assign({}, disp.moonsun);
+    if (disp.moonsun.moonImageData) disp.moonsun.moonImageData = '[base64 생략 len=' + disp.moonsun.moonImageData.length + ']';
+  }
+  document.getElementById('result-json').textContent = JSON.stringify(disp, null, 2);
+}
+
+main().catch(function(e) {
+  window.__result = { ok: false, error: String(e && e.message || e), moonsun: {}, timestamp: Date.now() };
+  document.getElementById('tag').className = 'tag tag-err';
+  document.getElementById('tag').textContent = '오류';
+  console.error('[moonsun.html] 예외:', e);
+});
+</script>
+</body>
+</html>
