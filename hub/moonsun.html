@@ -70,46 +70,11 @@
 </div>
 
 <script>
-// ════════════════════════════════════════════════════════════════
-//  SmartThings MoonSun Bridge — moonsun.html
-//
-//  동작:
-//    1. URL 파라미터에서 lat, lon 읽기
-//    2. timeanddate.com/astronomy 페이지를 CORS 프록시로 fetch → parseMoon()
-//    3. 달 이미지를 이미지 프록시로 fetch → base64 변환
-//    4. 결과를 window.__result 에 저장 (브리지가 수집)
-//
-//  브리지 호출 형식:
-//    GET /api/webview
-//        ?url=https://clipman.github.io/.../moonsun.html
-//            ?lat=37.57&lon=126.97
-//        &timeout=60
-//
-//  반환 JSON 구조 (window.__result):
-//  {
-//    "ok": true,
-//    "timestamp": 1716000000000,
-//    "moonsun": {
-//      "moonName":       "보름달",
-//      "moonFace":       98,
-//      "moonUrl":        "https://...",
-//      "moonImageData":  "data:image/png;base64,...",
-//      "moonHeading":    245,
-//      "moonHeadingDir": "서남서",
-//      "moonElevation":  32,
-//      "moonrise":       "21:14",
-//      "sunHeading":     180,
-//      "sunElevation":   45,
-//      "sunrise":        "05:45",
-//      "sunset":         "19:32"
-//    }
-//  }
-// ════════════════════════════════════════════════════════════════
 
-// ── 프록시 설정 ──────────────────────────────────────────────
-// timeanddate.com은 CORS를 허용하지 않으므로 프록시 경유
-var MOON_CORS      = 'https://corsproxy.io/?';
-var MOON_IMG_PROXY = 'https://small-cloud-4849.clipman-076.workers.dev/img?url=';
+// ── CORS 프록시 설정 ─────────────────────────────────────────
+var CORS_PROXY      = 'https://small-cloud-4849.clipman-076.workers.dev/proxy?url=';
+var FALLBACK_CORS   = 'https://corsproxy.io/?';
+var MOON_IMG_PROXY  = 'https://small-cloud-4849.clipman-076.workers.dev/img?url=';
 
 // ── URL 파라미터 ─────────────────────────────────────────────
 var _params = new URLSearchParams(window.location.search);
@@ -182,6 +147,24 @@ async function fetchWithTimeout(url, timeoutMs, opts) {
   } finally {
     clearTimeout(timer);
   }
+}
+
+// ── timeanddate.com HTML fetch (프록시 우선, 폴백) ───────────
+async function fetchTimeanddateHtml(targetUrl) {
+  // 1순위: CORS_PROXY
+  try {
+    log('프록시 fetch: corsproxy.io');
+    var res  = await fetchWithTimeout(CORS_PROXY + encodeURIComponent(targetUrl), 20000);
+    var html = await res.text();
+    if (html && html.length > 1000) return html;
+    throw new Error('응답이 너무 짧음: ' + html.length);
+  } catch(e) {
+    log('1순위 프록시 실패 → FALLBACK_CORS 폴백: ' + e.message, 'warn');
+  }
+  // 2순위: FALLBACK_CORS
+  log('폴백 프록시 사용: FALLBACK_CORS', 'warn');
+  var res = await fetchWithTimeout(FALLBACK_CORS + encodeURIComponent(targetUrl), 20000);
+  return await res.text();
 }
 
 // ════════════════════════════════════════════════════════════
@@ -346,8 +329,7 @@ async function main() {
   var errMsg   = null;
 
   try {
-    var res  = await fetchWithTimeout(MOON_CORS + encodeURIComponent(url), 20000);
-    var html = await res.text();
+    var html = await fetchTimeanddateHtml(url);
     moonData = parseMoon(html);
     if (!moonData.moonName) throw new Error('달 이름 파싱 실패 (선택자 불일치 가능성)');
     log('파싱 완료: ' + moonData.moonName + ' ' + moonData.moonFace + '% 월출=' + moonData.moonrise, 'ok');

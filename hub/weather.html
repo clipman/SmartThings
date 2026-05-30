@@ -87,50 +87,13 @@
 </div>
 
 <script>
-// ════════════════════════════════════════════════════════════════
-//  SmartThings Weather Bridge — weather.html
-//
-//  동작:
-//    1. URL 파라미터에서 lat, lon, location 읽기
-//    2. 네이버 날씨 페이지를 CORS 프록시로 fetch → parseWeather()
-//    3. 결과를 window.__result 에 저장 (브리지가 수집)
-//
-//  브리지 호출 형식:
-//    GET /api/webview/run?url=https://clipman.github.io/.../weather.html
-//                        ?lat=37.57&lon=126.97&location=인천광역시+서구
-//                        &timeout=60
-//    * location: device.preferences.location (필수)
-//
-//  반환 JSON 구조 (window.__result):
-//  {
-//    "weather": {
-//      "weather": "비",            "temperature": 18.5,
-//      "feeltemp": 17.0,           "humidity": 75,
-//      "dewpoint": 13.2,           "abshumidity": 11.8,
-//      "windspeed": 2.3,           "windbearing": "남",
-//      "rainpercent": 60,          "rainystart": "14:00",
-//      "precipitation": 1.5,       "maxtemp": 22.0,
-//      "mintemp": 15.0,            "uvgrade": "보통",
-//      "weatherIcon": "wt9",       "weatherUrl": "https://...",
-//      "tomorrow": {
-//        "amWeather": "구름많음",  "pmWeather": "비",
-//        "amRainfall": 20,         "pmRainfall": 60,
-//        "minTemp": 16.0,          "maxTemp": 23.0,
-//        "amIcon": "wt5",          "pmIcon": "wt9"
-//      }
-//    },
-//    "ok": true,
-//    "timestamp": 1716000000000
-//  }
-// ════════════════════════════════════════════════════════════════
 
 // ── CORS 프록시 설정 ─────────────────────────────────────────
-var CORS_PROXY = 'https://small-cloud-4849.clipman-076.workers.dev/proxy?url=';
+var CORS_PROXY    = 'https://corsproxy.io/?';
+var FALLBACK_CORS = 'https://small-cloud-4849.clipman-076.workers.dev/proxy?url=';
 
 // ── URL 파라미터 파싱 ────────────────────────────────────────
 var _params = new URLSearchParams(window.location.search);
-var LAT      = _params.get('lat')      || '37.57';
-var LON      = _params.get('lon')      || '126.97';
 var LOCATION = _params.get('location') || '';  // device.preferences.location (필수 항목)
 
 // ── 로그 유틸 ───────────────────────────────────────────────
@@ -162,17 +125,33 @@ function calcAbsHumidity(T, H) {
 }
 
 // ── fetch with timeout ──────────────────────────────────────
-async function fetchWithTimeout(url, timeoutMs) {
+async function fetchWithTimeout(proxyUrl, targetUrl, timeoutMs) {
   timeoutMs = timeoutMs || 25000;
   var ctrl  = new AbortController();
   var timer = setTimeout(function() { ctrl.abort(); }, timeoutMs);
   try {
-    var res = await fetch(CORS_PROXY + encodeURIComponent(url), { signal: ctrl.signal });
+    var res = await fetch(proxyUrl + encodeURIComponent(targetUrl), { signal: ctrl.signal });
     if (!res.ok) throw new Error('HTTP ' + res.status);
     return await res.text();
   } finally {
     clearTimeout(timer);
   }
+}
+
+// ── 네이버 페이지 fetch (프록시 우선, 폴백) ──────────────────
+async function fetchNaverHtml(targetUrl, timeoutMs) {
+  // 1순위: CORS_PROXY
+  try {
+    log('프록시 fetch: workers.dev');
+    var html = await fetchWithTimeout(CORS_PROXY, targetUrl, timeoutMs || 25000);
+    if (html && html.length > 1000) return html;
+    throw new Error('응답이 너무 짧음: ' + html.length);
+  } catch(e) {
+    log('1순위 프록시 실패 → FALLBACK_CORS 폴백: ' + e.message, 'warn');
+  }
+  // 2순위: FALLBACK_CORS
+  log('폴백 프록시 사용: FALLBACK_CORS', 'warn');
+  return await fetchWithTimeout(FALLBACK_CORS, targetUrl, timeoutMs || 25000);
 }
 
 // ════════════════════════════════════════════════════════════
@@ -328,7 +307,7 @@ function updatePreview(w) {
 async function main() {
   var tag = document.getElementById('tag');
 
-  log('lat=' + LAT + ', lon=' + LON + ', location=' + LOCATION);
+  log('location=' + LOCATION);
 
   // ── 1. 위치명 (device.preferences.location 에서 전달받음) ──
   var locationName = LOCATION;
@@ -344,7 +323,7 @@ async function main() {
   var errMsg = null;
 
   try {
-    var html = await fetchWithTimeout(naverUrl, 25000);
+    var html = await fetchNaverHtml(naverUrl, 25000);
     weatherData = parseWeather(html);
 
     // 기본 유효성 검사

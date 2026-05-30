@@ -1,0 +1,287 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>SmartThings Dust Bridge</title>
+<style>
+  /* ── 브리지 webview 실행용 페이지 ─────────────────────────────
+     이 페이지는 사람이 보는 UI가 아닙니다.
+     브리지 서버가 headless webview로 실행하여
+     window.__result 에 저장된 JSON을 수집합니다.
+
+     단, 디버그 목적으로 브라우저에서 직접 열면
+     진행 상황과 결과를 확인할 수 있습니다.
+  ─────────────────────────────────────────────────────────── */
+  :root {
+    --bg: #0d1117; --surface: #161b22; --border: #30363d;
+    --text: #e6edf3; --muted: #8b949e; --accent: #58a6ff;
+    --ok: #3fb950; --warn: #d29922; --err: #f85149;
+    --radius: 10px; --font: 'SF Mono','Fira Code','Consolas',monospace;
+  }
+  * { box-sizing: border-box; margin: 0; }
+  html, body { background: var(--bg); color: var(--text); font-family: var(--font); font-size: 13px; line-height: 1.6; }
+  body { padding: 20px; max-width: 680px; margin: 0 auto; }
+  h1 { font-size: 15px; color: var(--accent); margin-bottom: 16px; letter-spacing: .04em; }
+  .tag { display: inline-block; padding: 1px 7px; border-radius: 4px; font-size: 11px; font-weight: 600; margin-left: 8px; }
+  .tag-run  { background: #1f3a28; color: var(--ok); }
+  .tag-err  { background: #3a1f1f; color: var(--err); }
+  .tag-wait { background: #2a2a1f; color: var(--warn); }
+  .log-box { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 14px 16px; margin-bottom: 12px; max-height: 220px; overflow-y: auto; }
+  .log-line { padding: 1px 0; white-space: pre-wrap; word-break: break-all; }
+  .log-line.ok   { color: var(--ok); }
+  .log-line.warn { color: var(--warn); }
+  .log-line.err  { color: var(--err); }
+  .log-line.info { color: var(--muted); }
+  .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 12px; }
+  .card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 12px 14px; }
+  .card-title { font-size: 11px; color: var(--muted); margin-bottom: 6px; text-transform: uppercase; letter-spacing: .06em; }
+  .card-val { font-size: 22px; color: var(--text); }
+  .card-sub { font-size: 11px; color: var(--muted); margin-top: 2px; }
+  .grade-좋음  { color: #3fb950; }
+  .grade-보통  { color: #58a6ff; }
+  .grade-나쁨  { color: #d29922; }
+  .grade-매우나쁨 { color: #f85149; }
+  .result-box { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 14px 16px; }
+  .result-box pre { white-space: pre-wrap; word-break: break-all; color: var(--text); font-family: var(--font); font-size: 12px; }
+</style>
+</head>
+<body>
+
+<h1>🌫 SmartThings Dust Bridge <span id="tag" class="tag tag-wait">실행 중...</span></h1>
+
+<div class="log-box" id="logbox"></div>
+
+<div class="grid" id="preview" style="display:none">
+  <div class="card">
+    <div class="card-title">미세먼지 (PM10)</div>
+    <div class="card-val" id="pv-dust">--</div>
+    <div class="card-sub" id="pv-dustgrade">등급 --</div>
+  </div>
+  <div class="card">
+    <div class="card-title">초미세먼지 (PM2.5)</div>
+    <div class="card-val" id="pv-fine">--</div>
+    <div class="card-sub" id="pv-finegrade">등급 --</div>
+  </div>
+  <div class="card" style="grid-column:1/-1">
+    <div class="card-title">측정소</div>
+    <div class="card-val" style="font-size:15px" id="pv-station">--</div>
+  </div>
+</div>
+
+<div class="result-box" id="result-box" style="display:none">
+  <pre id="result-json"></pre>
+</div>
+
+<script>
+
+// ── CORS 프록시 설정 ─────────────────────────────────────────
+var CORS_PROXY    = 'https://corsproxy.io/?';
+var FALLBACK_CORS = 'https://small-cloud-4849.clipman-076.workers.dev/proxy?url=';
+
+// ── URL 파라미터 ─────────────────────────────────────────────
+var _params   = new URLSearchParams(window.location.search);
+var LOCATION  = _params.get('location') || '';
+
+// ── 로그 유틸 ────────────────────────────────────────────────
+var _logbox = document.getElementById('logbox');
+function log(msg, cls) {
+  var d = document.createElement('div');
+  d.className = 'log-line ' + (cls || 'info');
+  d.textContent = '[' + new Date().toLocaleTimeString('ko-KR') + '] ' + msg;
+  _logbox.appendChild(d);
+  _logbox.scrollTop = _logbox.scrollHeight;
+  console.log(msg);
+}
+
+// ── fetch with timeout ──────────────────────────────────────
+async function fetchWithTimeout(url, timeoutMs) {
+  timeoutMs = timeoutMs || 20000;
+  var ctrl  = new AbortController();
+  var timer = setTimeout(function() { ctrl.abort(); }, timeoutMs);
+  try {
+    var res = await fetch(url, { signal: ctrl.signal });
+    if (!res.ok) throw new Error('HTTP ' + res.status);
+    return await res.text();
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+// ── 네이버 미세먼지 페이지 fetch (프록시 우선, 폴백) ─────────
+async function fetchNaverDust(targetUrl) {
+  // 1순위: CORS_PROXY
+  try {
+    log('프록시 fetch: ' + CORS_PROXY.split('?')[0]);
+    var html = await fetchWithTimeout(CORS_PROXY + encodeURIComponent(targetUrl), 20000);
+    if (html && html.length > 1000) {
+      log('fetch 성공 len=' + html.length, 'ok');
+      return html;
+    }
+    throw new Error('응답이 너무 짧음: ' + html.length);
+  } catch(e) {
+    log('1순위 프록시 실패 → FALLBACK_CORS 폴백: ' + e.message, 'warn');
+  }
+  // 2순위: FALLBACK_CORS
+  log('폴백 프록시 사용: FALLBACK_CORS', 'warn');
+  return await fetchWithTimeout(FALLBACK_CORS + encodeURIComponent(targetUrl), 20000);
+}
+
+// ════════════════════════════════════════════════════════════
+//  parseDust(html)
+//  old.lua의 parseDust() querySelector 방식 그대로 채택
+//  (네이버 미세먼지 검색 결과 파싱)
+// ════════════════════════════════════════════════════════════
+function parseDust(html) {
+  var doc   = new DOMParser().parseFromString(html, 'text/html');
+  var panel = doc.querySelector('div.detail_content._today._tab_panel');
+  var items = panel ? Array.from(panel.children) : [];
+
+  // ── PM10 (미세먼지) ────────────────────────────────────────
+  var dustLevel = parseInt(
+    (items[1] && items[1].querySelector('span.num')
+      ? items[1].querySelector('span.num').textContent
+      : '') || '0'
+  ) || 0;
+  var dustGrade = (items[1] && items[1].querySelector('span.text'))
+    ? items[1].querySelector('span.text').textContent.trim()
+    : '';
+
+  // ── PM2.5 (초미세먼지) ────────────────────────────────────
+  var fineDustLevel = parseInt(
+    (items[2] && items[2].querySelector('span.num')
+      ? items[2].querySelector('span.num').textContent
+      : '') || '0'
+  ) || 0;
+  var fineDustGrade = (items[2] && items[2].querySelector('span.text'))
+    ? items[2].querySelector('span.text').textContent.trim()
+    : '';
+
+  // ── 측정소 이름 ───────────────────────────────────────────
+  var stationName = '';
+  var stationEl = doc.querySelector(
+    '.detail_content._today._tab_panel .offer_info.type_dot p:first-child'
+  );
+  if (stationEl && stationEl.firstChild && stationEl.firstChild.nodeType === 3) {
+    stationName = stationEl.firstChild.textContent.trim();
+  }
+
+  return {
+    dustLevel:     dustLevel,
+    dustGrade:     dustGrade,
+    fineDustLevel: fineDustLevel,
+    fineDustGrade: fineDustGrade,
+    stationName:   stationName,
+  };
+}
+
+// ── 등급별 CSS 클래스 ────────────────────────────────────────
+function gradeClass(grade) {
+  var map = { '좋음': 'grade-좋음', '보통': 'grade-보통',
+              '나쁨': 'grade-나쁨', '매우나쁨': 'grade-매우나쁨' };
+  return map[grade] || '';
+}
+
+// ── 미리보기 UI 업데이트 ─────────────────────────────────────
+function updatePreview(d) {
+  document.getElementById('preview').style.display = 'grid';
+  var s = function(id, v, cls) {
+    var el = document.getElementById(id);
+    if (!el) return;
+    el.textContent = v;
+    if (cls) el.className = el.className + ' ' + cls;
+  };
+  s('pv-dust',      d.dustLevel + ' μg/m³',     gradeClass(d.dustGrade));
+  s('pv-dustgrade', '등급: ' + (d.dustGrade || '--'));
+  s('pv-fine',      d.fineDustLevel + ' μg/m³', gradeClass(d.fineDustGrade));
+  s('pv-finegrade', '등급: ' + (d.fineDustGrade || '--'));
+  s('pv-station',   d.stationName || '(측정소 미확인)');
+}
+
+// ════════════════════════════════════════════════════════════
+//  메인
+// ════════════════════════════════════════════════════════════
+async function main() {
+  var tag = document.getElementById('tag');
+
+  if (!LOCATION) {
+    var errMsg = 'location 파라미터가 없습니다.';
+    log(errMsg, 'err');
+    window.__result = { ok: false, error: errMsg, dust: {}, timestamp: Date.now() };
+    tag.className = 'tag tag-err'; tag.textContent = '실패';
+    return;
+  }
+
+  log('location=' + LOCATION);
+
+  // ── 네이버 미세먼지 검색 URL ─────────────────────────────
+  var ts   = Date.now();
+  var dUrl = 'https://search.naver.com/search.naver?query='
+           + encodeURIComponent(LOCATION + ' 미세먼지') + '&_=' + ts;
+  log('네이버 미세먼지 fetch: ' + dUrl);
+
+  var dustData = null;
+  var errMsg   = null;
+
+  try {
+    var html = await fetchNaverDust(dUrl);
+    dustData = parseDust(html);
+
+    // 유효성 검사: 등급이 없으면 파싱 실패로 처리
+    if (!dustData.dustGrade && !dustData.fineDustGrade) {
+      throw new Error('미세먼지 등급 파싱 실패 (셀렉터 불일치 가능성)');
+    }
+    log('파싱 완료: PM10=' + dustData.dustLevel + '(' + dustData.dustGrade + ')'
+      + ' PM2.5=' + dustData.fineDustLevel + '(' + dustData.fineDustGrade + ')'
+      + ' 측정소=' + (dustData.stationName || '미확인'), 'ok');
+    updatePreview(dustData);
+
+  } catch(e) {
+    errMsg = String(e && e.message || e || 'unknown');
+    log('미세먼지 fetch/파싱 실패: ' + errMsg, 'err');
+  }
+
+  // ── 결과 구성 ────────────────────────────────────────────
+  var result;
+  if (dustData && (dustData.dustGrade || dustData.fineDustGrade)) {
+    result = {
+      ok: true,
+      timestamp: Date.now(),
+      dust: {
+        dustLevel:     dustData.dustLevel     || 0,
+        dustGrade:     dustData.dustGrade     || '모름',
+        fineDustLevel: dustData.fineDustLevel || 0,
+        fineDustGrade: dustData.fineDustGrade || '모름',
+        stationName:   dustData.stationName   || '',
+      },
+    };
+    tag.className = 'tag tag-run'; tag.textContent = '완료';
+    log('window.__result 저장 완료', 'ok');
+  } else {
+    result = {
+      ok: false,
+      timestamp: Date.now(),
+      error: errMsg || '미세먼지 데이터 없음',
+      dust: {},
+    };
+    tag.className = 'tag tag-err'; tag.textContent = '실패';
+    log('실패 결과 저장', 'err');
+  }
+
+  // ── 브리지가 읽어갈 결과 저장 ────────────────────────────
+  window.__result = result;
+
+  // 디버그 UI
+  document.getElementById('result-box').style.display = 'block';
+  document.getElementById('result-json').textContent = JSON.stringify(result, null, 2);
+}
+
+main().catch(function(e) {
+  window.__result = { ok: false, error: String(e && e.message || e), dust: {}, timestamp: Date.now() };
+  document.getElementById('tag').className = 'tag tag-err';
+  document.getElementById('tag').textContent = '오류';
+  console.error('[dust.html] 예외:', e);
+});
+</script>
+</body>
+</html>
