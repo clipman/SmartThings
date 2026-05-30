@@ -163,7 +163,7 @@ function parseDust(html) {
     '.detail_content._today._tab_panel .offer_info.type_dot p:first-child'
   );
   if (stationEl && stationEl.firstChild && stationEl.firstChild.nodeType === 3) {
-    stationName = stationEl.firstChild.textContent.trim();
+    stationName = stationEl.firstChild.textContent.trim().replace(/\s*측정소$/, '');
   }
 
   return {
