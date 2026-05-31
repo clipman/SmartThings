@@ -178,7 +178,7 @@ function parseMoon(html) {
   // ── 달 밝기 ────────────────────────────────────────────────
   // #cur-moon-percent (old.lua) 우선, 폴백으로 #cm-illum (api_moonsun)
   var faceEl  = doc.querySelector('#cur-moon-percent') || doc.querySelector('#cm-illum');
-  var moonFace = faceEl ? (parseInt(faceEl.textContent.trim()) || 0) : 0;
+  var moonFace = faceEl ? (Math.round(parseFloat(faceEl.textContent.trim()) || 0)) : 0;
 
   // ── 달 이름 ────────────────────────────────────────────────
   var nameEl     = doc.querySelector('#qlook a');
