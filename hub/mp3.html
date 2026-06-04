@@ -1,0 +1,382 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>MP3 Player</title>
+<style>
+  :root {
+    --bg:#0d1117;--bg2:#161b22;--bg3:#21262d;
+    --border:#30363d;--accent:#58a6ff;--accent2:#3fb950;
+    --danger:#f85149;--text:#e6edf3;--text2:#8b949e;
+    --radius:10px;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  html,body{background:var(--bg);color:var(--text);font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;font-size:14px;line-height:1.6}
+  body{max-width:640px;margin:0 auto;padding:16px}
+  h1{font-size:20px;font-weight:700;margin-bottom:12px;color:var(--text)}
+  #status{padding:8px 12px;border-radius:var(--radius);background:var(--bg3);border:1px solid var(--border);font-size:13px;color:var(--text2);margin-bottom:14px;min-height:36px;display:flex;align-items:center;gap:8px}
+  #status.ok{border-color:var(--accent2);color:var(--accent2)}
+  #status.err{border-color:var(--danger);color:var(--danger)}
+  #status.playing{border-color:var(--accent);color:var(--accent)}
+  .dot{width:6px;height:6px;border-radius:50%;background:currentColor;flex-shrink:0}
+  ol{padding-left:0;margin:0;list-style:none}
+  li.track{padding:9px 12px;border-radius:8px;cursor:pointer;display:flex;align-items:center;gap:10px;border:1px solid transparent;transition:background 0.12s}
+  li.track:hover{background:var(--bg3);border-color:var(--border)}
+  li.track.active{background:#0d2137;border-color:var(--accent);color:var(--accent)}
+  li.track.active .num{color:var(--accent)}
+  li.track.playing .num::after{content:'▶';margin-left:4px;font-size:10px}
+  .num{font-size:12px;color:var(--text2);min-width:28px;flex-shrink:0;text-align:right}
+  .name{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:14px}
+  #auth-wrap{text-align:center;padding:40px 20px}
+  #auth-wrap a{display:inline-block;padding:10px 28px;background:var(--accent);color:#0d1117;border-radius:8px;font-weight:700;text-decoration:none;font-size:15px}
+  #toast{position:fixed;bottom:24px;left:50%;transform:translateX(-50%) translateY(80px);background:var(--bg3);border:1px solid var(--border);border-radius:20px;padding:8px 18px;font-size:13px;color:var(--text);transition:transform 0.25s cubic-bezier(.34,1.56,.64,1);pointer-events:none;white-space:nowrap;z-index:100}
+  #toast.show{transform:translateX(-50%) translateY(0)}
+  #toast.ok{border-color:var(--accent2);color:var(--accent2)}
+  #toast.err{border-color:var(--danger);color:var(--danger)}
+</style>
+</head>
+<body>
+
+<h1>🎵 MP3 Player</h1>
+<div id="status"><div class="dot"></div><span id="status-msg">초기화 중...</span></div>
+<div id="auth-wrap" style="display:none">
+  <p style="margin-bottom:16px;color:var(--text2)">SmartThings 인증이 필요합니다.</p>
+  <a id="auth-link" href="#">인증하러 가기</a>
+</div>
+<ol id="playlist"></ol>
+<div id="toast"></div>
+
+<script>
+// ── 설정 ────────────────────────────────────────────────────
+var ST_CLIENT_ID     = 'b104ae2b-07eb-47af-88f1-70a3b7482e79';
+var ST_CLIENT_SECRET = '6e17abd5-d10e-4565-9bc9-f5e1bb4cbe0a';
+var ST_RELAY_URL     = 'https://clipman.github.io/SmartThings/st-relay/';
+var ST_API           = 'https://api.smartthings.com';
+var PROXY            = 'https://small-cloud-4849.clipman-076.workers.dev/st';
+
+function proxyUrl(path) {
+  return PROXY + '?url=' + encodeURIComponent(ST_API + path);
+}
+
+// ── URL 파라미터 ─────────────────────────────────────────────
+var DEVICE_ID = new URLSearchParams(location.search).get('d') || '';
+
+// ── 상태 ─────────────────────────────────────────────────────
+var currentIndex = 0;   // 1-based, 0=모름
+var isPlaying    = false;
+
+// ── 쿠키 / localStorage ──────────────────────────────────────
+function getCookie(k) {
+  var m = document.cookie.match('(^|;)\\s*' + k + '\\s*=\\s*([^;]+)');
+  if (m) return decodeURIComponent(m.pop());
+  try { var v = localStorage.getItem(k); return v !== null ? v : null; } catch(e) { return null; }
+}
+function setCookie(k, v, days) {
+  var e = new Date(); e.setTime(e.getTime() + days * 86400000);
+  document.cookie = k + '=' + encodeURIComponent(v) + ';expires=' + e.toUTCString() + ';path=/';
+  try { localStorage.setItem(k, v); } catch(e) {}
+}
+function delCookie(k) {
+  document.cookie = k + '=;expires=Thu, 01 Jan 1970 00:00:00 UTC;path=/';
+  try { localStorage.removeItem(k); } catch(e) {}
+}
+
+// ── 토큰 갱신 (index.html과 동일 로직) ───────────────────────
+var ST_REFRESH_LOCK_KEY = 'st_refresh_lock';
+var ST_REFRESH_LOCK_TTL = 15000;
+function sleep(ms) { return new Promise(function(r){setTimeout(r,ms);}); }
+function readRefreshLock() {
+  var raw = getCookie(ST_REFRESH_LOCK_KEY);
+  try { return raw ? JSON.parse(raw) : null; } catch(e) { return null; }
+}
+function writeRefreshLock(owner, expires) {
+  var value = JSON.stringify({owner:owner,expires:expires});
+  try { localStorage.setItem(ST_REFRESH_LOCK_KEY, value); } catch(e) {}
+  document.cookie = ST_REFRESH_LOCK_KEY + '=' + encodeURIComponent(value) + ';max-age=' + Math.ceil(ST_REFRESH_LOCK_TTL/1000) + ';path=/';
+}
+function acquireRefreshLock(owner) {
+  var now = Date.now(), lock = readRefreshLock();
+  if (lock && lock.expires > now && lock.owner !== owner) return false;
+  try {
+    writeRefreshLock(owner, now + ST_REFRESH_LOCK_TTL);
+    lock = readRefreshLock();
+    return !!(lock && lock.owner === owner);
+  } catch(e) { return true; }
+}
+function releaseRefreshLock(owner) {
+  try { var lock = readRefreshLock(); if (lock && lock.owner === owner) delCookie(ST_REFRESH_LOCK_KEY); } catch(e) {}
+}
+async function waitForRefreshLock(owner) {
+  for (var i = 0; i < 24; i++) {
+    var lock = readRefreshLock();
+    if (!lock || lock.expires <= Date.now() || lock.owner === owner) return;
+    await sleep(250);
+    var token = getCookie('st_access_token');
+    var expiry = parseInt(getCookie('st_token_expiry') || '0');
+    if (token && Date.now() < expiry - 60000) return;
+  }
+}
+async function refreshToken() {
+  var owner = String(Date.now()) + '-' + Math.random();
+  if (!acquireRefreshLock(owner)) {
+    await waitForRefreshLock(owner);
+    var t = getCookie('st_access_token'), ex = parseInt(getCookie('st_token_expiry') || '0');
+    if (t && Date.now() < ex - 60000) return true;
+    if (!acquireRefreshLock(owner)) return false;
+  }
+  var refresh = getCookie('st_refresh_token');
+  if (!refresh) { releaseRefreshLock(owner); return false; }
+  var res = await fetch(proxyUrl('/oauth/token'), {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/x-www-form-urlencoded',
+      'Authorization': 'Basic ' + btoa(ST_CLIENT_ID + ':' + ST_CLIENT_SECRET)
+    },
+    body: new URLSearchParams({grant_type:'refresh_token',refresh_token:refresh}).toString()
+  });
+  if (res.status === 401) { if (getCookie('st_refresh_token') === refresh) delCookie('st_refresh_token'); releaseRefreshLock(owner); return false; }
+  if (!res.ok) { releaseRefreshLock(owner); return false; }
+  var data = await res.json();
+  var expiry = Date.now() + data.expires_in * 1000;
+  setCookie('st_access_token',  data.access_token,  1);
+  setCookie('st_refresh_token', data.refresh_token, 60);
+  setCookie('st_token_expiry',  String(expiry),      2);
+  releaseRefreshLock(owner);
+  return true;
+}
+async function getToken() {
+  var token = getCookie('st_access_token');
+  var expiry = parseInt(getCookie('st_token_expiry') || '0');
+  if (token && Date.now() < expiry - 600000) return token;
+  if (!await refreshToken()) {
+    var t2 = getCookie('st_access_token') || token;
+    var ex2 = parseInt(getCookie('st_token_expiry') || String(expiry || 0));
+    if (t2 && Date.now() < ex2 - 60000) return t2;
+    return null;
+  }
+  return getCookie('st_access_token');
+}
+
+// ── UI 헬퍼 ─────────────────────────────────────────────────
+function setStatus(msg, cls) {
+  var el = document.getElementById('status');
+  el.className = cls || '';
+  document.getElementById('status-msg').textContent = msg;
+}
+function showToast(msg, type) {
+  var t = document.getElementById('toast');
+  t.textContent = msg;
+  t.className = 'show ' + (type || 'ok');
+  clearTimeout(t._tid);
+  t._tid = setTimeout(function(){ t.className = ''; }, 2500);
+}
+function escapeHtml(s) {
+  return String(s || '').replace(/[&<>"']/g, function(c) {
+    return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c];
+  });
+}
+function decodeTitle(s) {
+  s = String(s || '').replace(/\+/g, ' ');
+  try { return decodeURIComponent(s); } catch(e) { return s; }
+}
+
+// ── 인증 필요 표시 ───────────────────────────────────────────
+function showAuthRequired() {
+  var authUrl = ST_API + '/oauth/authorize' +
+    '?client_id=' + ST_CLIENT_ID +
+    '&scope=' + encodeURIComponent('r:devices:* x:devices:*') +
+    '&response_type=code' +
+    '&redirect_uri=' + encodeURIComponent(ST_RELAY_URL) +
+    '&state=' + btoa(DEVICE_ID + '|mp3');
+  document.getElementById('auth-link').href = authUrl;
+  document.getElementById('auth-wrap').style.display = 'block';
+  setStatus('인증이 필요합니다.', 'err');
+}
+
+// ── ST API 공통 fetch (401 시 갱신 1회 재시도) ───────────────
+async function stFetch(path, opts) {
+  var token = await getToken();
+  if (!token) return null;
+  opts = opts || {};
+  opts.headers = Object.assign({ 'Authorization': 'Bearer ' + token }, opts.headers || {});
+  var res = await fetch(proxyUrl(path), opts);
+  if (res.status === 401) {
+    delCookie('st_access_token');
+    token = await getToken();
+    if (!token) return null;
+    opts.headers['Authorization'] = 'Bearer ' + token;
+    res = await fetch(proxyUrl(path), opts);
+  }
+  return res;
+}
+
+// ── 플레이리스트 읽기 ────────────────────────────────────────
+async function loadPlaylist() {
+  setStatus('플레이리스트 읽는 중...');
+  var res = await stFetch(
+    '/v1/devices/' + DEVICE_ID +
+    '/components/info/capabilities/letsfly.playlist/status'
+  );
+  if (!res) { showAuthRequired(); return; }
+  if (!res.ok) { setStatus('플레이리스트 조회 실패: ' + res.status, 'err'); return; }
+
+  var data = await res.json();
+  var raw  = data.playlist && data.playlist.value;
+  if (!raw) {
+    setStatus('플레이리스트가 비어 있습니다. 앱에서 Scan MP3를 먼저 실행하세요.', 'err');
+    return;
+  }
+
+  var tracks;
+  try { tracks = JSON.parse(raw); } catch(e) {
+    setStatus('플레이리스트 파싱 오류', 'err'); return;
+  }
+  if (!tracks || !tracks.length) {
+    setStatus('플레이리스트가 비어 있습니다. 앱에서 Scan MP3를 먼저 실행하세요.', 'err');
+    return;
+  }
+
+  renderPlaylist(tracks);
+
+  // 현재 재생 중인 곡 인덱스도 읽기
+  await loadCurrentStatus();
+}
+
+// ── 현재 재생 상태 읽기 ──────────────────────────────────────
+async function loadCurrentStatus() {
+  var res = await stFetch(
+    '/v1/devices/' + DEVICE_ID +
+    '/components/main/capabilities/audioTrackData/status'
+  );
+  if (!res || !res.ok) return;
+  var data = await res.json();
+  var trackData = data.audioTrackData && data.audioTrackData.value;
+  if (trackData && trackData.title) {
+    // 제목으로 현재 인덱스 찾기
+    highlightByTitle(decodeTitle(trackData.title));
+  }
+}
+
+// ── 플레이리스트 렌더 ────────────────────────────────────────
+var _tracks = [];
+function renderPlaylist(tracks) {
+  _tracks = tracks;
+  var ol = document.getElementById('playlist');
+  ol.innerHTML = tracks.map(function(t, i) {
+    var raw = String(t.url || '').split('/').pop().split('?')[0];
+    try { raw = decodeURIComponent(raw); } catch(e) {}
+    var displayName = raw.replace(/\.mp3$/i, '') || decodeTitle(t.title) || ('Track ' + (i + 1));
+    return '<li class="track" data-index="' + (i + 1) + '" onclick="selectTrack(' + (i + 1) + ')">' +
+      '<span class="num">' + (i + 1) + '</span>' +
+      '<span class="name">' + escapeHtml(displayName) + '</span>' +
+      '</li>';
+  }).join('');
+  setStatus(tracks.length + '곡 로드됨');
+}
+
+function highlightByTitle(title) {
+  var items = document.querySelectorAll('li.track');
+  items.forEach(function(li) {
+    li.classList.remove('active', 'playing');
+  });
+  if (!title) return;
+  // 제목이 일치하는 항목 강조
+  for (var i = 0; i < _tracks.length; i++) {
+    var t = _tracks[i];
+    var raw = String(t.url || '').split('/').pop().split('?')[0];
+    try { raw = decodeURIComponent(raw); } catch(e) {}
+    var name = raw.replace(/\.mp3$/i, '') || decodeTitle(t.title || '');
+    if (name === title || decodeTitle(t.title || '') === title) {
+      currentIndex = i + 1;
+      var li = document.querySelector('li.track[data-index="' + currentIndex + '"]');
+      if (li) { li.classList.add('active', 'playing'); li.scrollIntoView({block:'nearest'}); }
+      break;
+    }
+  }
+}
+
+function highlightIndex(idx) {
+  document.querySelectorAll('li.track').forEach(function(li) {
+    li.classList.remove('active', 'playing');
+  });
+  currentIndex = idx;
+  var li = document.querySelector('li.track[data-index="' + idx + '"]');
+  if (li) { li.classList.add('active', 'playing'); li.scrollIntoView({block:'nearest'}); }
+}
+
+// ── 곡 선택 → ST API로 playTrackAndResume 명령 ───────────────
+async function selectTrack(index) {
+  var track = _tracks[index - 1];
+  if (!track) return;
+
+  highlightIndex(index);
+  setStatus('재생 명령 전송 중...', 'playing');
+
+  var body = {
+    commands: [{
+      component:  'main',
+      capability: 'audioNotification',
+      command:    'playTrackAndResume',
+      arguments:  [track.url]
+    }]
+  };
+
+  try {
+    var res = await stFetch(
+      '/v1/devices/' + DEVICE_ID + '/commands',
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body)
+      }
+    );
+    if (!res) { showAuthRequired(); return; }
+    if (!res.ok) {
+      var err = await res.json().catch(function(){ return {}; });
+      throw new Error((err.message || '명령 실패') + ' (' + res.status + ')');
+    }
+    var raw = String(track.url || '').split('/').pop().split('?')[0];
+    try { raw = decodeURIComponent(raw); } catch(e) {}
+    var name = raw.replace(/\.mp3$/i, '') || decodeTitle(track.title || '');
+    setStatus('▶ ' + name, 'playing');
+    showToast('▶ ' + name, 'ok');
+  } catch(e) {
+    setStatus(e.message, 'err');
+    showToast('❌ ' + e.message, 'err');
+  }
+}
+
+// ── 시작 ─────────────────────────────────────────────────────
+async function init() {
+  if (!DEVICE_ID) {
+    setStatus('기기 ID가 없습니다. (?d=DEVICE_ID)', 'err');
+    return;
+  }
+
+  // st-relay 콜백 처리 (auth=1 + hash에 토큰)
+  var params = new URLSearchParams(location.search);
+  if (params.get('auth') === '1' && location.hash) {
+    var h = new URLSearchParams(location.hash.slice(1));
+    var at = h.get('sta'), rt = h.get('str'), ex = h.get('ste');
+    if (at && rt) {
+      setCookie('st_access_token',  at, 1);
+      setCookie('st_refresh_token', rt, 60);
+      setCookie('st_token_expiry',  ex || String(Date.now() + 86400000), 2);
+    }
+    history.replaceState(null, '', location.pathname + '?d=' + DEVICE_ID);
+  }
+
+  var token = params.get('auth') === '1'
+    ? getCookie('st_access_token')
+    : await getToken();
+
+  if (!token) { showAuthRequired(); return; }
+
+  await loadPlaylist();
+}
+
+init();
+</script>
+</body>
+</html>
