@@ -1,0 +1,400 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<title>Xiaomi Map Bridge</title>
+<style>
+  :root { --bg:#0d1117; --surface:#161b22; --border:#30363d; --text:#e6edf3;
+          --muted:#8b949e; --accent:#58a6ff; --ok:#3fb950; --err:#f85149; --warn:#d29922; }
+  * { box-sizing:border-box; margin:0; }
+  html,body { background:var(--bg); color:var(--text); font-family:monospace; font-size:13px; padding:16px; }
+  h1 { font-size:14px; color:var(--accent); margin-bottom:12px; }
+  .log-box { background:var(--surface); border:1px solid var(--border); border-radius:8px;
+             padding:12px; max-height:240px; overflow-y:auto; margin-bottom:12px; }
+  .log-line { padding:1px 0; white-space:pre-wrap; word-break:break-all; }
+  .ok   { color:var(--ok); }
+  .err  { color:var(--err); }
+  .warn { color:var(--warn); }
+  .info { color:var(--muted); }
+  #map-preview { display:none; margin-top:12px; }
+  #map-preview img { max-width:100%; border:1px solid var(--border); border-radius:8px; }
+</style>
+</head>
+<body>
+<h1>🤖 Xiaomi Map Bridge</h1>
+<div class="log-box" id="logbox"></div>
+<div id="map-preview"><img id="map-img" src="" alt="map"></div>
+
+<script>
+// ── URL 파라미터 ──────────────────────────────────────────────────
+var P       = new URLSearchParams(window.location.search);
+var BRIDGE  = P.get('bridge')  || 'http://192.168.219.137:8088'; // 브리지 서버 주소
+var EMAIL   = P.get('email')   || '';
+var PASSWORD= P.get('password')|| '';
+
+// Xiaomi 계정 정보를 URL 파라미터로 받는 대신,
+// edge driver preferences에 저장된 값을 URL에 포함시키면 됩니다.
+
+// ── 로그 ─────────────────────────────────────────────────────────
+var _logbox = document.getElementById('logbox');
+function log(msg, cls) {
+  var d = document.createElement('div');
+  d.className = 'log-line ' + (cls || 'info');
+  d.textContent = '[' + new Date().toLocaleTimeString('ko-KR') + '] ' + msg;
+  _logbox.appendChild(d);
+  _logbox.scrollTop = _logbox.scrollHeight;
+}
+
+// ── /api/forward 를 통한 서버사이드 HTTP 요청 ─────────────────────
+// 브리지가 실제 HTTP 요청을 대신 수행 → CORS 없음, Set-Cookie 그대로 반환
+async function bridgeFetch(targetUrl, options) {
+  options = options || {};
+  var forwardUrl = BRIDGE + '/api/forward?url=' + encodeURIComponent(targetUrl);
+  var fetchOpts = {
+    method:  options.method  || 'GET',
+    headers: options.headers || {},
+  };
+  if (options.body) {
+    fetchOpts.body = options.body;
+  }
+  var resp = await fetch(forwardUrl, fetchOpts);
+  return resp;
+}
+
+// ── MD5 (비밀번호 해시용) ─────────────────────────────────────────
+// 경량 MD5 구현 (RFC 1321)
+function md5(str) {
+  function safeAdd(x,y){var l=(x&0xFFFF)+(y&0xFFFF);return(((x>>16)+(y>>16)+(l>>16))<<16)|(l&0xFFFF)}
+  function bitRotateLeft(num,cnt){return(num<<cnt)|(num>>>(32-cnt))}
+  function md5cmn(q,a,b,x,s,t){return safeAdd(bitRotateLeft(safeAdd(safeAdd(a,q),safeAdd(x,t)),s),b)}
+  function md5ff(a,b,c,d,x,s,t){return md5cmn((b&c)|((~b)&d),a,b,x,s,t)}
+  function md5gg(a,b,c,d,x,s,t){return md5cmn((b&d)|(c&(~d)),a,b,x,s,t)}
+  function md5hh(a,b,c,d,x,s,t){return md5cmn(b^c^d,a,b,x,s,t)}
+  function md5ii(a,b,c,d,x,s,t){return md5cmn(c^(b|(~d)),a,b,x,s,t)}
+  var m=[];var i;var strUtf8=unescape(encodeURIComponent(str));
+  var length8=strUtf8.length;var m8=[];
+  for(i=0;i<length8;i++){m8[i>>2]|=strUtf8.charCodeAt(i)<<((i%4)*8)}
+  m8[length8>>2]|=0x80<<((length8%4)*8);
+  m8[(((length8+8)>>6)<<4)+14]=length8*8;
+  var a=1732584193,b=-271733879,c=-1732584194,d=271733878;
+  for(i=0;i<m8.length;i+=16){
+    var oA=a,oB=b,oC=c,oD=d;
+    a=md5ff(a,b,c,d,m8[i],7,-680876936);d=md5ff(d,a,b,c,m8[i+1],12,-389564586);
+    c=md5ff(c,d,a,b,m8[i+2],17,606105819);b=md5ff(b,c,d,a,m8[i+3],22,-1044525330);
+    a=md5ff(a,b,c,d,m8[i+4],7,-176418897);d=md5ff(d,a,b,c,m8[i+5],12,1200080426);
+    c=md5ff(c,d,a,b,m8[i+6],17,-1473231341);b=md5ff(b,c,d,a,m8[i+7],22,-45705983);
+    a=md5ff(a,b,c,d,m8[i+8],7,1770035416);d=md5ff(d,a,b,c,m8[i+9],12,-1958414417);
+    c=md5ff(c,d,a,b,m8[i+10],17,-42063);b=md5ff(b,c,d,a,m8[i+11],22,-1990404162);
+    a=md5ff(a,b,c,d,m8[i+12],7,1804603682);d=md5ff(d,a,b,c,m8[i+13],12,-40341101);
+    c=md5ff(c,d,a,b,m8[i+14],17,-1502002290);b=md5ff(b,c,d,a,m8[i+15],22,1236535329);
+    a=md5gg(a,b,c,d,m8[i+1],5,-165796510);d=md5gg(d,a,b,c,m8[i+6],9,-1069501632);
+    c=md5gg(c,d,a,b,m8[i+11],14,643717713);b=md5gg(b,c,d,a,m8[i],20,-373897302);
+    a=md5gg(a,b,c,d,m8[i+5],5,-701558691);d=md5gg(d,a,b,c,m8[i+10],9,38016083);
+    c=md5gg(c,d,a,b,m8[i+15],14,-660478335);b=md5gg(b,c,d,a,m8[i+4],20,-405537848);
+    a=md5gg(a,b,c,d,m8[i+9],5,568446438);d=md5gg(d,a,b,c,m8[i+14],9,-1019803690);
+    c=md5gg(c,d,a,b,m8[i+3],14,-187363961);b=md5gg(b,c,d,a,m8[i+8],20,1163531501);
+    a=md5gg(a,b,c,d,m8[i+13],5,-1444681467);d=md5gg(d,a,b,c,m8[i+2],9,-51403784);
+    c=md5gg(c,d,a,b,m8[i+7],14,1735328473);b=md5gg(b,c,d,a,m8[i+12],20,-1926607734);
+    a=md5hh(a,b,c,d,m8[i+5],4,-378558);d=md5hh(d,a,b,c,m8[i+8],11,-2022574463);
+    c=md5hh(c,d,a,b,m8[i+11],16,1839030562);b=md5hh(b,c,d,a,m8[i+14],23,-35309556);
+    a=md5hh(a,b,c,d,m8[i+1],4,-1530992060);d=md5hh(d,a,b,c,m8[i+4],11,1272893353);
+    c=md5hh(c,d,a,b,m8[i+7],16,-155497632);b=md5hh(b,c,d,a,m8[i+10],23,-1094730640);
+    a=md5hh(a,b,c,d,m8[i+13],4,681279174);d=md5hh(d,a,b,c,m8[i+2],11,-358537222);
+    c=md5hh(c,d,a,b,m8[i+15],16,-722521979);b=md5hh(b,c,d,a,m8[i+8],23,76029189);
+    a=md5hh(a,b,c,d,m8[i+11],4,-640364487);d=md5hh(d,a,b,c,m8[i+14],11,-421815835);
+    c=md5hh(c,d,a,b,m8[i+1],16,530742520);b=md5hh(b,c,d,a,m8[i+4],23,-995338651);
+    a=md5ii(a,b,c,d,m8[i],6,-198630844);d=md5ii(d,a,b,c,m8[i+7],10,1126891415);
+    c=md5ii(c,d,a,b,m8[i+14],15,-1416354905);b=md5ii(b,c,d,a,m8[i+5],21,-57434055);
+    a=md5ii(a,b,c,d,m8[i+12],6,1700485571);d=md5ii(d,a,b,c,m8[i+3],10,-1894986606);
+    c=md5ii(c,d,a,b,m8[i+10],15,-1051523);b=md5ii(b,c,d,a,m8[i+1],21,-2054922799);
+    a=md5ii(a,b,c,d,m8[i+8],6,1873313359);d=md5ii(d,a,b,c,m8[i+15],10,-30611744);
+    c=md5ii(c,d,a,b,m8[i+6],15,-1560198380);b=md5ii(b,c,d,a,m8[i+13],21,1309151649);
+    a=md5ii(a,b,c,d,m8[i+4],6,-145523070);d=md5ii(d,a,b,c,m8[i+11],10,-1120210379);
+    c=md5ii(c,d,a,b,m8[i+2],15,718787259);b=md5ii(b,c,d,a,m8[i+9],21,-343485551);
+    a=safeAdd(a,oA);b=safeAdd(b,oB);c=safeAdd(c,oC);d=safeAdd(d,oD);
+  }
+  var hex='';var hexChars='0123456789abcdef';
+  [a,b,c,d].forEach(function(n){for(var j=0;j<4;j++){var byte=(n>>(j*8))&0xFF;hex+=hexChars[(byte>>4)&0xF]+hexChars[byte&0xF];}});
+  return hex;
+}
+
+// ── Xiaomi 클라우드 로그인 ─────────────────────────────────────────
+// /api/forward 를 통해 브리지가 서버사이드로 요청 → Set-Cookie 반환
+async function xiaomiLogin(email, password) {
+  log('Xiaomi 로그인 중...');
+  var passwordMd5 = md5(password).toUpperCase();
+  var body = '_json=true'
+    + '&user=' + encodeURIComponent(email)
+    + '&hash=' + passwordMd5
+    + '&sid=xiaomiio'
+    + '&_sign='
+    + '&serviceParam=%7B%22checkSafePhone%22%3Afalse%7D';
+
+  var resp = await bridgeFetch('https://account.xiaomi.com/pass/serviceLoginAuth2', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/x-www-form-urlencoded',
+      'User-Agent': 'APP/com.xiaomi.mihome APPV/6.0.103',
+    },
+    body: body,
+  });
+
+  // Set-Cookie 헤더에서 serviceToken 추출
+  // /api/forward 는 응답 헤더를 그대로 반환하므로 resp.headers 에서 읽음
+  // 주의: 브라우저 fetch API는 Set-Cookie를 직접 노출하지 않음
+  // → 응답 바디 JSON의 serviceToken 필드 또는 별도 헤더 확인 필요
+  var text = await resp.text();
+  // Xiaomi 응답: "&&&START&&&{...json...}"
+  var jsonStr = text.replace('&&&START&&&', '').trim();
+  var json = JSON.parse(jsonStr);
+
+  log('로그인 응답 code=' + json.code, json.code === 0 ? 'ok' : 'err');
+  if (json.code !== 0) throw new Error('로그인 실패: code=' + json.code + ' desc=' + (json.desc || ''));
+
+  // serviceToken: 응답 JSON에 직접 포함되는 경우 (일부 버전)
+  // 또는 Set-Cookie에서만 오는 경우 → /api/forward 응답 헤더 확인
+  var serviceToken = json.serviceToken || '';
+
+  // Set-Cookie 접근 시도 (브리지가 x-set-cookie 같은 커스텀 헤더로 전달하면 가능)
+  if (!serviceToken) {
+    // 브리지 /api/forward가 Set-Cookie를 'x-forwarded-set-cookie' 등으로 노출하는지 확인
+    serviceToken = resp.headers.get('x-forwarded-set-cookie') || '';
+    if (serviceToken) {
+      serviceToken = serviceToken.split(';')
+        .map(function(s){ return s.trim(); })
+        .find(function(s){ return s.startsWith('serviceToken='); }) || '';
+      serviceToken = serviceToken.replace('serviceToken=', '');
+    }
+  }
+
+  if (!serviceToken) throw new Error('serviceToken을 찾을 수 없음 (Set-Cookie 접근 불가)');
+
+  return {
+    userId:       String(json.userId),
+    ssecurity:    json.ssecurity,
+    serviceToken: serviceToken,
+  };
+}
+
+// ── 맵 URL 취득 ──────────────────────────────────────────────────
+async function fetchMapUrl(session, country) {
+  var host = country === 'cn' ? 'api.io.mi.com' : country + '.api.io.mi.com';
+  var path = '/app/home/getmapinfo';
+  var reqBody = JSON.stringify({
+    data: { obj_name: 'robomap/0' }
+  });
+
+  var nonce = generateNonce();
+  var sig   = await signRequest(session.ssecurity, path, nonce, reqBody);
+
+  var cookie = 'userId=' + session.userId
+    + '; serviceToken=' + session.serviceToken
+    + '; locale=en_US; timezone=GMT+09:00';
+
+  var resp = await bridgeFetch('https://' + host + path, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'User-Agent': 'APP/com.xiaomi.mihome APPV/6.0.103',
+      'x-xiaomi-protocal-flag-cli': 'PROTOCAL-HTTP2',
+      'Cookie': cookie,
+      'MIOT-ENCRYPT-ALGORITHM': 'ENCRYPT-RC4',
+      'Signature': sig,
+      'Nonce': nonce,
+    },
+    body: reqBody,
+  });
+
+  var json = await resp.json();
+  log('getmapinfo: ' + JSON.stringify(json).substring(0, 120), 'info');
+  var url = json && json.result && json.result.url;
+  if (!url) throw new Error('맵 URL 없음: ' + JSON.stringify(json).substring(0, 200));
+  return url;
+}
+
+// ── nonce / 서명 ─────────────────────────────────────────────────
+function generateNonce() {
+  var bytes = new Uint8Array(8);
+  crypto.getRandomValues(bytes);
+  var epoch = Math.floor(Date.now() / 60000);
+  var buf = new Uint8Array(12);
+  buf.set(bytes, 0);
+  buf[8]  = (epoch >> 24) & 0xFF;
+  buf[9]  = (epoch >> 16) & 0xFF;
+  buf[10] = (epoch >> 8)  & 0xFF;
+  buf[11] = epoch & 0xFF;
+  return btoa(String.fromCharCode(...buf));
+}
+
+async function signRequest(ssecurity, path, nonce, body) {
+  var msg = [ssecurity, path, nonce, body].join('\n');
+  var enc = new TextEncoder();
+  var keyData = enc.encode(msg);
+  // SHA-256
+  var hashBuf = await crypto.subtle.digest('SHA-256', keyData);
+  var hashArr = Array.from(new Uint8Array(hashBuf));
+  return btoa(String.fromCharCode(...hashArr));
+}
+
+// ── .rrmap 파싱 + Canvas 렌더링 → base64 JPEG ────────────────────
+async function renderMap(mapUrl, session) {
+  log('맵 데이터 다운로드...');
+
+  var cookie = 'userId=' + session.userId + '; serviceToken=' + session.serviceToken;
+  var resp = await bridgeFetch(mapUrl, {
+    headers: { 'Cookie': cookie, 'User-Agent': 'APP/com.xiaomi.mihome APPV/6.0.103' }
+  });
+  if (!resp.ok) throw new Error('맵 다운로드 실패: HTTP ' + resp.status);
+
+  var arrayBuf = await resp.arrayBuffer();
+  var raw = new Uint8Array(arrayBuf);
+  log('다운로드 완료: ' + raw.length + ' bytes');
+
+  // gzip 압축 해제 (DecompressionStream API)
+  var decompressed;
+  try {
+    var ds = new DecompressionStream('gzip');
+    var writer = ds.writable.getWriter();
+    var reader = ds.readable.getReader();
+    writer.write(raw);
+    writer.close();
+    var chunks = [];
+    while (true) {
+      var res2 = await reader.read();
+      if (res2.done) break;
+      chunks.push(res2.value);
+    }
+    var totalLen = chunks.reduce(function(s,c){ return s+c.length; }, 0);
+    decompressed = new Uint8Array(totalLen);
+    var offset = 0;
+    chunks.forEach(function(c){ decompressed.set(c, offset); offset += c.length; });
+    log('압축 해제: ' + decompressed.length + ' bytes', 'ok');
+  } catch(e) {
+    log('gzip 해제 실패, raw 데이터 사용: ' + e.message, 'warn');
+    decompressed = raw;
+  }
+
+  // .rrmap 헤더 파싱
+  var hasHeader = decompressed.length >= 20
+    && decompressed[0] === 0x72  // 'r'
+    && decompressed[1] === 0x72; // 'r'
+
+  var pixelOffset = 0;
+  var robotX = -1, robotY = -1, chargerX = -1, chargerY = -1;
+
+  if (hasHeader) {
+    function readInt32LE(pos) {
+      return decompressed[pos] | (decompressed[pos+1]<<8) | (decompressed[pos+2]<<16) | (decompressed[pos+3]<<24);
+    }
+    robotX   = readInt32LE(0x08);
+    robotY   = readInt32LE(0x0C);
+    chargerX = readInt32LE(0x10);
+    chargerY = readInt32LE(0x14);
+    pixelOffset = 0x14;
+    log('헤더: robot=(' + robotX + ',' + robotY + ') charger=(' + chargerX + ',' + chargerY + ')', 'info');
+  }
+
+  var pixels = decompressed.slice(pixelOffset);
+  var side = Math.round(Math.sqrt(pixels.length));
+  // 알려진 표준 크기로 보정
+  if (Math.abs(side - 1024) < 10) side = 1024;
+  else if (Math.abs(side - 512) < 10) side = 512;
+  else if (Math.abs(side - 256) < 10) side = 256;
+  log('맵 크기: ' + side + 'x' + side + ' (' + pixels.length + ' pixels)', 'info');
+
+  // Canvas 렌더링
+  var renderSize = Math.min(side, 512);
+  var canvas = document.createElement('canvas');
+  canvas.width = renderSize;
+  canvas.height = renderSize;
+  var ctx = canvas.getContext('2d');
+  var imageData = ctx.createImageData(renderSize, renderSize);
+  var data = imageData.data;
+  var scale = side / renderSize;
+
+  for (var y = 0; y < renderSize; y++) {
+    for (var x = 0; x < renderSize; x++) {
+      var srcX = Math.floor(x * scale);
+      var srcY = Math.floor(y * scale);
+      var idx = srcY * side + srcX;
+      var pix = idx < pixels.length ? pixels[idx] : 0;
+      var r, g, b;
+      if (pix === 0xFF) { r=255; g=255; b=255; }       // 청소 가능 (흰색)
+      else if (pix === 0x01) { r=30;  g=30;  b=30;  }  // 벽 (검정)
+      else { r=190; g=190; b=190; }                     // 미탐색 (회색)
+      var di = (y * renderSize + x) * 4;
+      data[di]=r; data[di+1]=g; data[di+2]=b; data[di+3]=255;
+    }
+  }
+  ctx.putImageData(imageData, 0, 0);
+
+  // 마커 그리기
+  var scaleFactor = renderSize / side;
+  if (chargerX >= 0 && chargerY >= 0) {
+    ctx.fillStyle = '#00b400';
+    ctx.beginPath();
+    ctx.arc(chargerX * scaleFactor, chargerY * scaleFactor, 8, 0, Math.PI*2);
+    ctx.fill();
+  }
+  if (robotX >= 0 && robotY >= 0) {
+    ctx.fillStyle = '#ff3333';
+    ctx.beginPath();
+    ctx.arc(robotX * scaleFactor, robotY * scaleFactor, 6, 0, Math.PI*2);
+    ctx.fill();
+  }
+
+  // JPEG base64 반환
+  var dataUrl = canvas.toDataURL('image/jpeg', 0.85);
+  var base64  = dataUrl.split(',')[1];
+  log('렌더링 완료: ' + base64.length + ' chars base64', 'ok');
+
+  // 미리보기
+  document.getElementById('map-img').src = dataUrl;
+  document.getElementById('map-preview').style.display = 'block';
+
+  return base64;
+}
+
+// ── 메인 ─────────────────────────────────────────────────────────
+async function main() {
+  try {
+    if (!EMAIL || !PASSWORD) {
+      throw new Error('email, password URL 파라미터 필수');
+    }
+
+    // 1. 로그인
+    var session = await xiaomiLogin(EMAIL, PASSWORD);
+    log('로그인 성공 userId=' + session.userId.substring(0,6) + '..', 'ok');
+
+    // 2. country 감지 (cn 우선 시도)
+    var country = 'cn';
+    for (var c of ['cn','sg','de','us']) {
+      try {
+        var url = await fetchMapUrl(session, c);
+        if (url) { country = c; break; }
+      } catch(e) {
+        log('country ' + c + ' 실패: ' + e.message, 'warn');
+      }
+    }
+
+    // 3. 맵 URL 취득 (이미 위에서 url을 얻었으므로 재사용)
+    var mapUrl = await fetchMapUrl(session, country);
+    log('맵 URL 취득: ' + mapUrl.substring(0, 60) + '...', 'ok');
+
+    // 4. 렌더링
+    var base64 = await renderMap(mapUrl, session);
+
+    window.__result = { ok: true, mimeType: 'image/jpeg', data: base64, timestamp: Date.now() };
+
+  } catch(e) {
+    log('오류: ' + e.message, 'err');
+    window.__result = { ok: false, error: e.message, timestamp: Date.now() };
+  }
+}
+
+main().catch(function(e) {
+  window.__result = { ok: false, error: String(e && e.message || e), timestamp: Date.now() };
+});
+</script>
+</body>
+</html>
