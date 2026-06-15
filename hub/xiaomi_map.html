@@ -45,19 +45,32 @@ function log(msg, cls) {
   _logbox.scrollTop = _logbox.scrollHeight;
 }
 
-// ── /api/forward 를 통한 서버사이드 HTTP 요청 ─────────────────────
-// 브리지가 실제 HTTP 요청을 대신 수행 → CORS 없음, Set-Cookie 그대로 반환
+// ── 직접 fetch (WebView CookieManager가 쿠키 자동 관리) ──────────
+// /api/webview 로 실행된 Android 내장 WebView는 CORS 제약 없이
+// 외부 도메인에 직접 요청 가능하며, Set-Cookie를 CookieManager가 자동 처리함.
+// /api/forward 경유 없이 직접 fetch() 사용.
 async function bridgeFetch(targetUrl, options) {
   options = options || {};
-  var forwardUrl = BRIDGE + '/api/forward?url=' + encodeURIComponent(targetUrl);
   var fetchOpts = {
-    method:  options.method  || 'GET',
-    headers: options.headers || {},
+    method:      options.method  || 'GET',
+    headers:     options.headers || {},
+    credentials: 'include',   // CookieManager 쿠키 자동 포함
   };
   if (options.body) {
     fetchOpts.body = options.body;
   }
-  var resp = await fetch(forwardUrl, fetchOpts);
+  var resp = await fetch(targetUrl, fetchOpts);
+  return resp;
+}
+
+// ── 바이너리 다운로드 전용 (맵 gz): 브리지 /api/forward 경유 ────
+// Xiaomi 맵 스토리지는 cross-origin이므로 브리지를 통해 바이너리를 가져옴.
+async function bridgeFetchBinary(targetUrl, cookieHeader) {
+  var forwardUrl = BRIDGE + '/api/forward?url=' + encodeURIComponent(targetUrl);
+  var resp = await fetch(forwardUrl, {
+    method: 'GET',
+    headers: cookieHeader ? { 'X-Forward-Cookie': cookieHeader } : {},
+  });
   return resp;
 }
 
@@ -119,7 +132,9 @@ function md5(str) {
 }
 
 // ── Xiaomi 클라우드 로그인 ─────────────────────────────────────────
-// /api/forward 를 통해 브리지가 서버사이드로 요청 → Set-Cookie 반환
+// /api/webview 로 실행된 Android WebView가 직접 요청:
+//   - Set-Cookie → CookieManager가 자동 저장 (후속 요청에 자동 포함)
+//   - serviceToken → 응답 JSON body의 serviceToken 필드에서 직접 읽음
 async function xiaomiLogin(email, password) {
   log('Xiaomi 로그인 중...');
   var passwordMd5 = md5(password).toUpperCase();
@@ -130,6 +145,7 @@ async function xiaomiLogin(email, password) {
     + '&_sign='
     + '&serviceParam=%7B%22checkSafePhone%22%3Afalse%7D';
 
+  // WebView가 직접 요청 → Set-Cookie가 CookieManager에 자동 저장됨
   var resp = await bridgeFetch('https://account.xiaomi.com/pass/serviceLoginAuth2', {
     method: 'POST',
     headers: {
@@ -139,39 +155,25 @@ async function xiaomiLogin(email, password) {
     body: body,
   });
 
-  // Set-Cookie 헤더에서 serviceToken 추출
-  // /api/forward 는 응답 헤더를 그대로 반환하므로 resp.headers 에서 읽음
-  // 주의: 브라우저 fetch API는 Set-Cookie를 직접 노출하지 않음
-  // → 응답 바디 JSON의 serviceToken 필드 또는 별도 헤더 확인 필요
   var text = await resp.text();
   // Xiaomi 응답: "&&&START&&&{...json...}"
   var jsonStr = text.replace('&&&START&&&', '').trim();
-  var json = JSON.parse(jsonStr);
+  var data = JSON.parse(jsonStr);
 
-  log('로그인 응답 code=' + json.code, json.code === 0 ? 'ok' : 'err');
-  if (json.code !== 0) throw new Error('로그인 실패: code=' + json.code + ' desc=' + (json.desc || ''));
+  log('로그인 응답 code=' + data.code, data.code === 0 ? 'ok' : 'err');
+  if (data.code !== 0) throw new Error('로그인 실패: code=' + data.code + ' desc=' + (data.desc || ''));
 
-  // serviceToken: 응답 JSON에 직접 포함되는 경우 (일부 버전)
-  // 또는 Set-Cookie에서만 오는 경우 → /api/forward 응답 헤더 확인
-  var serviceToken = json.serviceToken || '';
+  // serviceToken은 응답 JSON body에서 직접 읽음
+  // Set-Cookie의 serviceToken도 CookieManager가 자동 저장하므로
+  // 후속 요청 시 credentials:'include' 로 자동 포함됨
+  var serviceToken = data.serviceToken || '';
+  if (!serviceToken) throw new Error('serviceToken 없음 (응답 JSON에 serviceToken 필드 없음)');
 
-  // Set-Cookie 접근 시도 (브리지가 x-set-cookie 같은 커스텀 헤더로 전달하면 가능)
-  if (!serviceToken) {
-    // 브리지 /api/forward가 Set-Cookie를 'x-forwarded-set-cookie' 등으로 노출하는지 확인
-    serviceToken = resp.headers.get('x-forwarded-set-cookie') || '';
-    if (serviceToken) {
-      serviceToken = serviceToken.split(';')
-        .map(function(s){ return s.trim(); })
-        .find(function(s){ return s.startsWith('serviceToken='); }) || '';
-      serviceToken = serviceToken.replace('serviceToken=', '');
-    }
-  }
-
-  if (!serviceToken) throw new Error('serviceToken을 찾을 수 없음 (Set-Cookie 접근 불가)');
+  log('serviceToken 취득 완료 (앞 8자: ' + serviceToken.substring(0, 8) + '...)', 'ok');
 
   return {
-    userId:       String(json.userId),
-    ssecurity:    json.ssecurity,
+    userId:       String(data.userId),
+    ssecurity:    data.ssecurity,
     serviceToken: serviceToken,
   };
 }
@@ -187,17 +189,16 @@ async function fetchMapUrl(session, country) {
   var nonce = generateNonce();
   var sig   = await signRequest(session.ssecurity, path, nonce, reqBody);
 
-  var cookie = 'userId=' + session.userId
-    + '; serviceToken=' + session.serviceToken
-    + '; locale=en_US; timezone=GMT+09:00';
-
+  // Cookie 헤더를 수동으로 설정하지 않아도 됨:
+  // 로그인 시 CookieManager가 serviceToken 쿠키를 자동 저장했으므로
+  // credentials:'include'(bridgeFetch 기본값)로 자동 포함됨.
+  // 단, userId/locale 등 추가 쿠키는 명시적으로 지정.
   var resp = await bridgeFetch('https://' + host + path, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
       'User-Agent': 'APP/com.xiaomi.mihome APPV/6.0.103',
       'x-xiaomi-protocal-flag-cli': 'PROTOCAL-HTTP2',
-      'Cookie': cookie,
       'MIOT-ENCRYPT-ALGORITHM': 'ENCRYPT-RC4',
       'Signature': sig,
       'Nonce': nonce,
@@ -240,10 +241,12 @@ async function signRequest(ssecurity, path, nonce, body) {
 async function renderMap(mapUrl, session) {
   log('맵 데이터 다운로드...');
 
-  var cookie = 'userId=' + session.userId + '; serviceToken=' + session.serviceToken;
-  var resp = await bridgeFetch(mapUrl, {
-    headers: { 'Cookie': cookie, 'User-Agent': 'APP/com.xiaomi.mihome APPV/6.0.103' }
-  });
+  // 맵 바이너리는 Xiaomi 스토리지(cross-origin)에서 가져오므로
+  // 브리지 /api/forward 를 경유함.
+  // serviceToken 쿠키는 브리지가 서버사이드로 요청할 때 필요하므로
+  // X-Forward-Cookie 커스텀 헤더로 전달 (브리지가 지원하는 경우).
+  var cookieHeader = 'userId=' + session.userId + '; serviceToken=' + session.serviceToken;
+  var resp = await bridgeFetchBinary(mapUrl, cookieHeader);
   if (!resp.ok) throw new Error('맵 다운로드 실패: HTTP ' + resp.status);
 
   var arrayBuf = await resp.arrayBuffer();
