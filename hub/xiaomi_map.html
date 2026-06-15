@@ -27,13 +27,10 @@
 
 <script>
 // ── URL 파라미터 ──────────────────────────────────────────────────
-var P       = new URLSearchParams(window.location.search);
-var BRIDGE  = P.get('bridge')  || 'http://192.168.219.137:8088'; // 브리지 서버 주소
-var EMAIL   = P.get('email')   || '';
-var PASSWORD= P.get('password')|| '';
-
-// Xiaomi 계정 정보를 URL 파라미터로 받는 대신,
-// edge driver preferences에 저장된 값을 URL에 포함시키면 됩니다.
+var P        = new URLSearchParams(window.location.search);
+var BRIDGE   = P.get('bridge')   || 'http://192.168.219.137:8088';
+var EMAIL    = P.get('email')    || '';
+var PASSWORD = P.get('password') || '';
 
 // ── 로그 ─────────────────────────────────────────────────────────
 var _logbox = document.getElementById('logbox');
@@ -45,37 +42,78 @@ function log(msg, cls) {
   _logbox.scrollTop = _logbox.scrollHeight;
 }
 
-// ── 직접 fetch (WebView CookieManager가 쿠키 자동 관리) ──────────
-// /api/webview 로 실행된 Android 내장 WebView는 CORS 제약 없이
-// 외부 도메인에 직접 요청 가능하며, Set-Cookie를 CookieManager가 자동 처리함.
-// /api/forward 경유 없이 직접 fetch() 사용.
-async function bridgeFetch(targetUrl, options) {
+// ── 브리지 /api/forward 경유 fetch ───────────────────────────────
+// CORS 제약을 우회하기 위해 모든 외부 요청을 브리지 서버가 서버사이드로 대신 수행한다.
+// 브리지는 X-Forward-* 헤더를 받아 실제 요청에 반영하고,
+// 응답 헤더(Set-Cookie 포함)를 X-Forward-Response-* 헤더로 돌려준다.
+//
+// options:
+//   method  : 'GET' | 'POST'
+//   headers : { key: value, ... }  → X-Forward-Header-{key}: value 로 전달
+//   body    : string               → POST body
+//   cookies : { key: value, ... }  → X-Forward-Cookie 헤더로 전달 (Cookie: k=v; k2=v2)
+//
+// 반환값: { status, headers, text(), json() }
+async function forwardFetch(targetUrl, options) {
   options = options || {};
+
+  var fwdHeaders = {};
+  fwdHeaders['X-Forward-Url']    = targetUrl;
+  fwdHeaders['X-Forward-Method'] = options.method || 'GET';
+
+  // 요청 헤더 전달
+  if (options.headers) {
+    Object.keys(options.headers).forEach(function(k) {
+      fwdHeaders['X-Forward-Header-' + k] = options.headers[k];
+    });
+  }
+
+  // 쿠키 전달
+  if (options.cookies && Object.keys(options.cookies).length > 0) {
+    var cookieStr = Object.keys(options.cookies).map(function(k) {
+      return encodeURIComponent(k) + '=' + encodeURIComponent(options.cookies[k]);
+    }).join('; ');
+    fwdHeaders['X-Forward-Cookie'] = cookieStr;
+  }
+
+  // POST body
   var fetchOpts = {
-    method:      options.method  || 'GET',
-    headers:     options.headers || {},
-    credentials: 'include',   // CookieManager 쿠키 자동 포함
+    method:  options.body ? 'POST' : 'GET',
+    headers: fwdHeaders,
   };
   if (options.body) {
     fetchOpts.body = options.body;
+    fwdHeaders['X-Forward-Body-Type'] = options.headers && options.headers['Content-Type']
+                                        ? options.headers['Content-Type']
+                                        : 'application/x-www-form-urlencoded';
   }
-  var resp = await fetch(targetUrl, fetchOpts);
+
+  var resp = await fetch(BRIDGE + '/api/forward', fetchOpts);
   return resp;
 }
 
-// ── 바이너리 다운로드 전용 (맵 gz): 브리지 /api/forward 경유 ────
-// Xiaomi 맵 스토리지는 cross-origin이므로 브리지를 통해 바이너리를 가져옴.
-async function bridgeFetchBinary(targetUrl, cookieHeader) {
-  var forwardUrl = BRIDGE + '/api/forward?url=' + encodeURIComponent(targetUrl);
-  var resp = await fetch(forwardUrl, {
-    method: 'GET',
-    headers: cookieHeader ? { 'X-Forward-Cookie': cookieHeader } : {},
+// ── Set-Cookie 헤더 파싱 ─────────────────────────────────────────
+// 브리지가 X-Forward-Set-Cookie 헤더로 돌려주는 경우 파싱
+// 형식: "name=value; Path=/; ..." (여러 개일 때 줄바꿈 구분)
+function parseSetCookies(resp) {
+  var jar = {};
+  // 브리지가 X-Forward-Set-Cookie 또는 Set-Cookie 를 반환하는 경우 모두 처리
+  ['x-forward-set-cookie', 'set-cookie'].forEach(function(hdrName) {
+    var hdr = resp.headers.get(hdrName);
+    if (!hdr) return;
+    hdr.split('\n').forEach(function(line) {
+      var first = line.split(';')[0].trim();
+      var eq    = first.indexOf('=');
+      if (eq < 0) return;
+      var k = first.substring(0, eq).trim();
+      var v = first.substring(eq + 1).trim();
+      if (k) jar[k] = v;
+    });
   });
-  return resp;
+  return jar;
 }
 
 // ── MD5 (비밀번호 해시용) ─────────────────────────────────────────
-// 경량 MD5 구현 (RFC 1321)
 function md5(str) {
   function safeAdd(x,y){var l=(x&0xFFFF)+(y&0xFFFF);return(((x>>16)+(y>>16)+(l>>16))<<16)|(l&0xFFFF)}
   function bitRotateLeft(num,cnt){return(num<<cnt)|(num>>>(32-cnt))}
@@ -84,9 +122,9 @@ function md5(str) {
   function md5gg(a,b,c,d,x,s,t){return md5cmn((b&d)|(c&(~d)),a,b,x,s,t)}
   function md5hh(a,b,c,d,x,s,t){return md5cmn(b^c^d,a,b,x,s,t)}
   function md5ii(a,b,c,d,x,s,t){return md5cmn(c^(b|(~d)),a,b,x,s,t)}
-  var m=[];var i;var strUtf8=unescape(encodeURIComponent(str));
+  var strUtf8=unescape(encodeURIComponent(str));
   var length8=strUtf8.length;var m8=[];
-  for(i=0;i<length8;i++){m8[i>>2]|=strUtf8.charCodeAt(i)<<((i%4)*8)}
+  for(var i=0;i<length8;i++){m8[i>>2]|=strUtf8.charCodeAt(i)<<((i%4)*8)}
   m8[length8>>2]|=0x80<<((length8%4)*8);
   m8[(((length8+8)>>6)<<4)+14]=length8*8;
   var a=1732584193,b=-271733879,c=-1732584194,d=271733878;
@@ -132,9 +170,8 @@ function md5(str) {
 }
 
 // ── Xiaomi 클라우드 로그인 ─────────────────────────────────────────
-// /api/webview 로 실행된 Android WebView가 직접 요청:
-//   - Set-Cookie → CookieManager가 자동 저장 (후속 요청에 자동 포함)
-//   - serviceToken → 응답 JSON body의 serviceToken 필드에서 직접 읽음
+// 모든 외부 요청을 /api/forward 를 통해 브리지 서버가 서버사이드로 대신 수행.
+// 응답에서 Set-Cookie 를 파싱하여 JS 쿠키 jar 에 저장하고 후속 요청에 수동으로 포함.
 async function xiaomiLogin(email, password) {
   log('Xiaomi 로그인 중...');
   var passwordMd5 = md5(password).toUpperCase();
@@ -145,15 +182,22 @@ async function xiaomiLogin(email, password) {
     + '&_sign='
     + '&serviceParam=%7B%22checkSafePhone%22%3Afalse%7D';
 
-  // WebView가 직접 요청 → Set-Cookie가 CookieManager에 자동 저장됨
-  var resp = await bridgeFetch('https://account.xiaomi.com/pass/serviceLoginAuth2', {
+  var resp = await forwardFetch('https://account.xiaomi.com/pass/serviceLoginAuth2', {
     method: 'POST',
     headers: {
-      'Content-Type': 'application/x-www-form-urlencoded',
-      'User-Agent': 'APP/com.xiaomi.mihome APPV/6.0.103',
+      'Content-Type':  'application/x-www-form-urlencoded',
+      'User-Agent':    'APP/com.xiaomi.mihome APPV/6.0.103',
     },
     body: body,
   });
+
+  if (!resp.ok) {
+    throw new Error('로그인 HTTP 오류: ' + resp.status);
+  }
+
+  // 브리지가 Set-Cookie를 돌려준 경우 파싱하여 쿠키 jar 초기화
+  var cookieJar = parseSetCookies(resp);
+  log('쿠키 jar 항목 수: ' + Object.keys(cookieJar).length, 'info');
 
   var text = await resp.text();
   // Xiaomi 응답: "&&&START&&&{...json...}"
@@ -163,18 +207,20 @@ async function xiaomiLogin(email, password) {
   log('로그인 응답 code=' + data.code, data.code === 0 ? 'ok' : 'err');
   if (data.code !== 0) throw new Error('로그인 실패: code=' + data.code + ' desc=' + (data.desc || ''));
 
-  // serviceToken은 응답 JSON body에서 직접 읽음
-  // Set-Cookie의 serviceToken도 CookieManager가 자동 저장하므로
-  // 후속 요청 시 credentials:'include' 로 자동 포함됨
   var serviceToken = data.serviceToken || '';
-  if (!serviceToken) throw new Error('serviceToken 없음 (응답 JSON에 serviceToken 필드 없음)');
+  if (!serviceToken) throw new Error('serviceToken 없음');
 
   log('serviceToken 취득 완료 (앞 8자: ' + serviceToken.substring(0, 8) + '...)', 'ok');
+
+  // serviceToken / userId 를 쿠키 jar 에 병합
+  cookieJar['serviceToken'] = serviceToken;
+  cookieJar['userId']       = String(data.userId);
 
   return {
     userId:       String(data.userId),
     ssecurity:    data.ssecurity,
     serviceToken: serviceToken,
+    cookieJar:    cookieJar,   // 후속 요청에 수동으로 첨부
   };
 }
 
@@ -182,29 +228,26 @@ async function xiaomiLogin(email, password) {
 async function fetchMapUrl(session, country) {
   var host = country === 'cn' ? 'api.io.mi.com' : country + '.api.io.mi.com';
   var path = '/app/home/getmapinfo';
-  var reqBody = JSON.stringify({
-    data: { obj_name: 'robomap/0' }
-  });
+  var reqBody = JSON.stringify({ data: { obj_name: 'robomap/0' } });
 
   var nonce = generateNonce();
   var sig   = await signRequest(session.ssecurity, path, nonce, reqBody);
 
-  // Cookie 헤더를 수동으로 설정하지 않아도 됨:
-  // 로그인 시 CookieManager가 serviceToken 쿠키를 자동 저장했으므로
-  // credentials:'include'(bridgeFetch 기본값)로 자동 포함됨.
-  // 단, userId/locale 등 추가 쿠키는 명시적으로 지정.
-  var resp = await bridgeFetch('https://' + host + path, {
+  var resp = await forwardFetch('https://' + host + path, {
     method: 'POST',
     headers: {
-      'Content-Type': 'application/json',
-      'User-Agent': 'APP/com.xiaomi.mihome APPV/6.0.103',
+      'Content-Type':        'application/json',
       'x-xiaomi-protocal-flag-cli': 'PROTOCAL-HTTP2',
-      'MIOT-ENCRYPT-ALGORITHM': 'ENCRYPT-RC4',
-      'Signature': sig,
-      'Nonce': nonce,
+      'mishop-client-id':    '180100041079',
+      'User-Agent':          'APP/com.xiaomi.mihome APPV/6.0.103',
     },
-    body: reqBody,
+    cookies: Object.assign({}, session.cookieJar, {
+      'locale': 'ko_KR',
+    }),
+    body: reqBody + '&signature=' + encodeURIComponent(sig) + '&nonce=' + encodeURIComponent(nonce),
   });
+
+  if (!resp.ok) throw new Error('getmapinfo HTTP ' + resp.status);
 
   var json = await resp.json();
   log('getmapinfo: ' + JSON.stringify(json).substring(0, 120), 'info');
@@ -231,22 +274,23 @@ async function signRequest(ssecurity, path, nonce, body) {
   var msg = [ssecurity, path, nonce, body].join('\n');
   var enc = new TextEncoder();
   var keyData = enc.encode(msg);
-  // SHA-256
   var hashBuf = await crypto.subtle.digest('SHA-256', keyData);
   var hashArr = Array.from(new Uint8Array(hashBuf));
   return btoa(String.fromCharCode(...hashArr));
 }
 
-// ── .rrmap 파싱 + Canvas 렌더링 → base64 JPEG ────────────────────
+// ── 맵 바이너리 다운로드 ──────────────────────────────────────────
+// 맵 스토리지도 cross-origin 이므로 /api/forward 경유
 async function renderMap(mapUrl, session) {
   log('맵 데이터 다운로드...');
 
-  // 맵 바이너리는 Xiaomi 스토리지(cross-origin)에서 가져오므로
-  // 브리지 /api/forward 를 경유함.
-  // serviceToken 쿠키는 브리지가 서버사이드로 요청할 때 필요하므로
-  // X-Forward-Cookie 커스텀 헤더로 전달 (브리지가 지원하는 경우).
-  var cookieHeader = 'userId=' + session.userId + '; serviceToken=' + session.serviceToken;
-  var resp = await bridgeFetchBinary(mapUrl, cookieHeader);
+  var resp = await forwardFetch(mapUrl, {
+    method:  'GET',
+    cookies: {
+      'userId':       session.userId,
+      'serviceToken': session.serviceToken,
+    },
+  });
   if (!resp.ok) throw new Error('맵 다운로드 실패: HTTP ' + resp.status);
 
   var arrayBuf = await resp.arrayBuffer();
@@ -299,7 +343,6 @@ async function renderMap(mapUrl, session) {
 
   var pixels = decompressed.slice(pixelOffset);
   var side = Math.round(Math.sqrt(pixels.length));
-  // 알려진 표준 크기로 보정
   if (Math.abs(side - 1024) < 10) side = 1024;
   else if (Math.abs(side - 512) < 10) side = 512;
   else if (Math.abs(side - 256) < 10) side = 256;
@@ -322,9 +365,9 @@ async function renderMap(mapUrl, session) {
       var idx = srcY * side + srcX;
       var pix = idx < pixels.length ? pixels[idx] : 0;
       var r, g, b;
-      if (pix === 0xFF) { r=255; g=255; b=255; }       // 청소 가능 (흰색)
-      else if (pix === 0x01) { r=30;  g=30;  b=30;  }  // 벽 (검정)
-      else { r=190; g=190; b=190; }                     // 미탐색 (회색)
+      if (pix === 0xFF) { r=255; g=255; b=255; }
+      else if (pix === 0x01) { r=30;  g=30;  b=30;  }
+      else { r=190; g=190; b=190; }
       var di = (y * renderSize + x) * 4;
       data[di]=r; data[di+1]=g; data[di+2]=b; data[di+3]=255;
     }
@@ -351,7 +394,6 @@ async function renderMap(mapUrl, session) {
   var base64  = dataUrl.split(',')[1];
   log('렌더링 완료: ' + base64.length + ' chars base64', 'ok');
 
-  // 미리보기
   document.getElementById('map-img').src = dataUrl;
   document.getElementById('map-preview').style.display = 'block';
 
@@ -369,22 +411,21 @@ async function main() {
     var session = await xiaomiLogin(EMAIL, PASSWORD);
     log('로그인 성공 userId=' + session.userId.substring(0,6) + '..', 'ok');
 
-    // 2. country 감지 (cn 우선 시도)
-    var country = 'cn';
-    for (var c of ['cn','sg','de','us']) {
+    // 2. country 감지 (cn 우선)
+    var mapUrl = null;
+    for (var c of ['cn', 'sg', 'de', 'us']) {
       try {
-        var url = await fetchMapUrl(session, c);
-        if (url) { country = c; break; }
+        mapUrl = await fetchMapUrl(session, c);
+        if (mapUrl) { log('country=' + c + ' 맵 URL 취득 성공', 'ok'); break; }
       } catch(e) {
         log('country ' + c + ' 실패: ' + e.message, 'warn');
       }
     }
+    if (!mapUrl) throw new Error('모든 country에서 맵 URL 취득 실패');
 
-    // 3. 맵 URL 취득 (이미 위에서 url을 얻었으므로 재사용)
-    var mapUrl = await fetchMapUrl(session, country);
     log('맵 URL 취득: ' + mapUrl.substring(0, 60) + '...', 'ok');
 
-    // 4. 렌더링
+    // 3. 렌더링
     var base64 = await renderMap(mapUrl, session);
 
     window.__result = { ok: true, mimeType: 'image/jpeg', data: base64, timestamp: Date.now() };
