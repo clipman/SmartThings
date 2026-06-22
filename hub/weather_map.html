@@ -1,0 +1,251 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<title>Weather Map Bridge</title>
+<style>
+  :root { --bg:#0d1117; --surface:#161b22; --border:#30363d; --text:#e6edf3;
+          --muted:#8b949e; --accent:#58a6ff; --ok:#3fb950; --err:#f85149; --warn:#d29922; }
+  * { box-sizing:border-box; margin:0; }
+  html,body { background:var(--bg); color:var(--text); font-family:monospace; font-size:13px; padding:16px; }
+  h1 { font-size:14px; color:var(--accent); margin-bottom:12px; }
+  .log-box { background:var(--surface); border:1px solid var(--border); border-radius:8px;
+             padding:12px; max-height:240px; overflow-y:auto; margin-bottom:12px; }
+  .log-line { padding:1px 0; white-space:pre-wrap; word-break:break-all; }
+  .ok   { color:var(--ok); }
+  .err  { color:var(--err); }
+  .warn { color:var(--warn); }
+  .info { color:var(--muted); }
+  #map-preview { display:none; margin-top:12px; }
+  #map-preview img { max-width:100%; border:1px solid var(--border); border-radius:8px; }
+</style>
+</head>
+<body>
+<h1>🌦️ Weather Map Bridge</h1>
+<div class="log-box" id="logbox"></div>
+<div id="map-preview"><img id="map-img" src="" alt="map"></div>
+
+<script>
+// ── URL 파라미터 파서 ─────────────────────────────────────────────
+function getRawQueryParam(name) {
+  var search = window.location.search.replace(/^\?/, '');
+  var pairs  = search.split('&');
+  for (var i = 0; i < pairs.length; i++) {
+    var eq = pairs[i].indexOf('=');
+    if (eq === -1) continue;
+    var key = decodeURIComponent(pairs[i].substring(0, eq));
+    if (key === name) return decodeURIComponent(pairs[i].substring(eq + 1));
+  }
+  return null;
+}
+
+// ── 파라미터 ─────────────────────────────────────────────────────
+// bridge  : SmartWeb 브리지 서버 주소 (필수)
+// authKey : 기상청 API허브 인증키 (필수)
+// mapType : "rdr"(레이더 합성)로 고정. 더 이상 외부 입력을 받지 않는다.
+var BRIDGE   = getRawQueryParam('bridge')  || '';
+var AUTH_KEY = getRawQueryParam('authKey') || '';
+var MAP_TYPE = 'rdr';
+
+window.__progress = 'init';
+window.__logs = [];
+
+if (!BRIDGE) {
+  window.__result = { ok: false, error: 'bridge 파라미터 필수', timestamp: Date.now() };
+  throw new Error('bridge 파라미터 없음');
+}
+if (!AUTH_KEY) {
+  window.__result = { ok: false, error: 'authKey 파라미터 필수 (apihub.kma.go.kr 발급)', timestamp: Date.now() };
+  throw new Error('authKey 파라미터 없음');
+}
+
+// ── 로그 ─────────────────────────────────────────────────────────
+var _logbox = document.getElementById('logbox');
+function log(msg, cls) {
+  var line = '[' + new Date().toLocaleTimeString('ko-KR') + '] ' + msg;
+  window.__logs.push((cls || 'info') + ': ' + line);
+  var d = document.createElement('div');
+  d.className = 'log-line ' + (cls || 'info');
+  d.textContent = line;
+  _logbox.appendChild(d);
+  _logbox.scrollTop = _logbox.scrollHeight;
+}
+
+// ── 브리지 /api/forward 경유 fetch ───────────────────────────────
+async function forwardFetch(targetUrl) {
+  var proxyUrl = BRIDGE + '/api/forward?url=' + encodeURIComponent(targetUrl);
+  return await fetch(proxyUrl, { method: 'GET' });
+}
+
+// ── KST 시각 포맷(yyyymmddHHMI) — 5분 단위 반내림 ────────────────
+function getKstTime(offsetMin) {
+  var d   = new Date(Date.now() - (offsetMin || 0) * 60 * 1000);
+  var kst = new Date(d.getTime() + 9 * 3600 * 1000);
+  return kst.getUTCFullYear()
+    + String(kst.getUTCMonth() + 1).padStart(2, '0')
+    + String(kst.getUTCDate()).padStart(2, '0')
+    + String(kst.getUTCHours()).padStart(2, '0')
+    + String(Math.floor(kst.getUTCMinutes() / 5) * 5).padStart(2, '0');
+}
+
+// ── typ04 API URL 빌더 ────────────────────────────────────────────
+// 실제 응답은 Content-Type 헤더와 무관하게 PNG 이미지를 직접 반환한다.
+// cmp=cmb : 레이더 합성 전국. "rdr"로 고정되어 다른 값은 더 이상 사용하지 않는다.
+function buildApiUrl(mapType, tm) {
+  var cmp = 'cmb';
+  return 'https://apihub.kma.go.kr/api/typ04/url/rdr_cmp_file.php'
+    + '?tm=' + tm
+    + '&data=img&cmp=' + cmp
+    + '&authKey=' + encodeURIComponent(AUTH_KEY);
+}
+
+// ── 이미지 blob → canvas → base64(jpeg) ─────────────────────────
+async function blobToBase64(blob) {
+  return new Promise(function(resolve, reject) {
+    var img = new Image();
+    var url = URL.createObjectURL(blob);
+    img.onload = function() {
+      // 최대 너비 646->323px 로 비율 유지 리사이즈
+      var MAX_W = 323;
+      var scale = img.naturalWidth > MAX_W ? MAX_W / img.naturalWidth : 1.0;
+      var w = Math.round(img.naturalWidth  * scale);
+      var h = Math.round(img.naturalHeight * scale);
+      log('리사이즈: ' + img.naturalWidth + 'x' + img.naturalHeight
+          + ' → ' + w + 'x' + h + ' (scale=' + scale.toFixed(2) + ')', 'info');
+      var c = document.createElement('canvas');
+      c.width  = w;
+      c.height = h;
+      c.getContext('2d').drawImage(img, 0, 0, w, h);
+      URL.revokeObjectURL(url);
+      try {
+        resolve(c.toDataURL('image/jpeg', 0.72).split(',')[1]);
+      } catch(e) { reject(e); }
+    };
+    img.onerror = function() {
+      URL.revokeObjectURL(url);
+      reject(new Error('이미지 렌더링 실패'));
+    };
+    img.src = url;
+  });
+}
+
+// ── 포맷 판별 헬퍼 ───────────────────────────────────────────────
+async function detectFormat(blob) {
+  var buf   = await blob.slice(0, 4).arrayBuffer();
+  var b     = new Uint8Array(buf);
+  var hex   = Array.from(b).map(function(x){ return x.toString(16).padStart(2,'0'); }).join(' ');
+  var isPng = b[0]===0x89 && b[1]===0x50 && b[2]===0x4E && b[3]===0x47;
+  var isGif = b[0]===0x47 && b[1]===0x49 && b[2]===0x46;
+  var isJpg = b[0]===0xFF && b[1]===0xD8;
+  var isZip = b[0]===0x50 && b[1]===0x4B;
+  var isHtml= b[0]===0x3C; // '<'
+  var fmt   = isPng?'PNG' : isGif?'GIF' : isJpg?'JPG' : isZip?'ZIP' : isHtml?'HTML' : 'UNKNOWN';
+  log('응답 포맷: ' + fmt + ' (hex: ' + hex + ')', 'info');
+  return { fmt: fmt, isImage: isPng || isGif || isJpg };
+}
+
+// ── 이미지 fetch + 재시도 (-10분, -15분, -20분) ───────────────────
+async function fetchImageWithRetry(mapType) {
+  var offsets = [10, 15, 20];
+  var lastErr = '';
+
+  for (var i = 0; i < offsets.length; i++) {
+    var tm  = getKstTime(offsets[i]);
+    var url = buildApiUrl(mapType, tm);
+    log((i === 0 ? '조회 시각: ' : '재시도 시각: ') + tm + ' (KST)', 'info');
+    log('API URL: ' + url.replace(AUTH_KEY, AUTH_KEY.substring(0,8)+'***'), 'info');
+
+    var resp;
+    try {
+      resp = await forwardFetch(url);
+    } catch(e) {
+      lastErr = '네트워크 오류: ' + e.message;
+      log(lastErr, 'warn');
+      continue;
+    }
+
+    log('HTTP ' + resp.status, resp.ok ? 'info' : 'warn');
+
+    if (!resp.ok) {
+      var errBody = '';
+      try { errBody = await resp.text(); } catch(_) {}
+      lastErr = 'HTTP ' + resp.status + (errBody ? ' — ' + errBody.substring(0, 100) : '');
+      log('실패: ' + lastErr, 'warn');
+      continue;
+    }
+
+    var blob = await resp.blob();
+    log('수신: ' + blob.size + ' bytes', 'ok');
+
+    var det = await detectFormat(blob);
+
+    if (det.fmt === 'HTML') {
+      var txt = await blob.text();
+      throw new Error('API가 HTML 반환 (인증키/권한 확인): ' + txt.substring(0, 150));
+    }
+
+    if (!det.isImage) {
+      lastErr = '이미지 아님 (포맷: ' + det.fmt + ')';
+      log(lastErr, 'warn');
+      continue;
+    }
+
+    return { blob: blob, tm: tm, fmt: det.fmt, url: url };
+  }
+  throw new Error('이미지 취득 실패 (재시도 소진): ' + lastErr);
+}
+
+// ── 메인 ─────────────────────────────────────────────────────────
+async function main() {
+  try {
+    log('bridge=' + BRIDGE, 'info');
+    log('authKey=' + AUTH_KEY.substring(0, 8) + '***  mapType=' + MAP_TYPE, 'info');
+
+    // 1단계: 이미지 fetch (재시도 포함)
+    window.__progress = 'fetch';
+    var result = await fetchImageWithRetry(MAP_TYPE);
+
+    // 2단계: blob → canvas → base64
+    window.__progress = 'render';
+    var base64 = await blobToBase64(result.blob);
+    log('base64 변환 완료: ' + base64.length + ' chars', 'ok');
+
+    // 3단계: 미리보기
+    document.getElementById('map-img').src = 'data:image/jpeg;base64,' + base64;
+    document.getElementById('map-preview').style.display = 'block';
+
+    window.__result = {
+      ok       : true,
+      mimeType : 'image/jpeg',
+      data     : base64,
+      imageUrl : result.url,   // 기상청 원본 이미지 URL
+      tm       : result.tm,
+      timestamp: Date.now(),
+      logs     : window.__logs,
+    };
+    log('완료 ✓', 'ok');
+
+  } catch(e) {
+    log('오류: ' + e.message, 'err');
+    window.__result = {
+      ok       : false,
+      error    : e.message,
+      progress : window.__progress || 'init',
+      timestamp: Date.now(),
+      logs     : window.__logs,
+    };
+  }
+}
+
+main().catch(function(e) {
+  window.__result = {
+    ok       : false,
+    error    : String(e && e.message || e),
+    progress : window.__progress || 'init',
+    timestamp: Date.now(),
+    logs     : window.__logs,
+  };
+});
+</script>
+</body>
+</html>
