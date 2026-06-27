@@ -1,0 +1,177 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<title>Telegram Bridge</title>
+<style>
+  :root { --bg:#0d1117; --surface:#161b22; --border:#30363d; --text:#e6edf3;
+          --muted:#8b949e; --accent:#58a6ff; --ok:#3fb950; --err:#f85149; --warn:#d29922; }
+  * { box-sizing:border-box; margin:0; }
+  html,body { background:var(--bg); color:var(--text); font-family:monospace;
+              font-size:13px; padding:16px; }
+  h1 { font-size:14px; color:var(--accent); margin-bottom:12px; }
+  .log-box { background:var(--surface); border:1px solid var(--border); border-radius:8px;
+             padding:12px; max-height:300px; overflow-y:auto; }
+  .log-line { padding:1px 0; white-space:pre-wrap; word-break:break-all; }
+  .ok   { color:var(--ok); }
+  .err  { color:var(--err); }
+  .warn { color:var(--warn); }
+  .info { color:var(--muted); }
+</style>
+</head>
+<body>
+<h1>✈️ Telegram Bridge</h1>
+<div class="log-box" id="logbox"></div>
+
+<script>
+// ── URL 파라미터 파서 ──────────────────
+function getRawQueryParam(name) {
+  var search = window.location.search.replace(/^\?/, '');
+  var pairs  = search.split('&');
+  for (var i = 0; i < pairs.length; i++) {
+    var eq = pairs[i].indexOf('=');
+    if (eq === -1) continue;
+    var key = decodeURIComponent(pairs[i].substring(0, eq));
+    if (key === name) return decodeURIComponent(pairs[i].substring(eq + 1));
+  }
+  return null;
+}
+
+// ── 파라미터 ─────────────────────────────────────────────────────
+// bridge   : SmartWeb 브리지 서버 주소 (필수)
+// botToken : 텔레그램 Bot 토큰 (필수)  예) 123456789:AAxxxxxxx
+// chatId   : 수신자 chat_id (필수)     예) 123456789 또는 -1001234567890(그룹)
+// message  : 전송할 메시지 (선택)
+var BRIDGE    = getRawQueryParam('bridge')    || '';
+var BOT_TOKEN = getRawQueryParam('botToken')  || '';
+var CHAT_ID   = getRawQueryParam('chatId')    || '';
+var MESSAGE   = getRawQueryParam('message')   || '📡 SmartThings 알림';
+
+window.__progress = 'init';
+window.__logs     = [];
+
+if (!BRIDGE)    { window.__result = { ok:false, error:'bridge 파라미터 필수',   timestamp:Date.now() }; throw new Error('bridge 없음'); }
+if (!BOT_TOKEN) { window.__result = { ok:false, error:'botToken 파라미터 필수', timestamp:Date.now() }; throw new Error('botToken 없음'); }
+if (!CHAT_ID)   { window.__result = { ok:false, error:'chatId 파라미터 필수',   timestamp:Date.now() }; throw new Error('chatId 없음'); }
+
+// ── 로그 (weather_map.html 과 동일) ──────────────────────────────
+var _logbox = document.getElementById('logbox');
+function log(msg, cls) {
+  var line = '[' + new Date().toLocaleTimeString('ko-KR') + '] ' + msg;
+  window.__logs.push((cls || 'info') + ': ' + line);
+  var d = document.createElement('div');
+  d.className = 'log-line ' + (cls || 'info');
+  d.textContent = line;
+  _logbox.appendChild(d);
+  _logbox.scrollTop = _logbox.scrollHeight;
+}
+
+// ── 브리지 /api/forward 경유 fetch (weather_map.html 과 동일) ────
+// GET:  forwardFetch(targetUrl)
+// POST: forwardFetch(targetUrl, bodyStr, extraHeaders)
+//       → 브리지가 수신한 HTTP 메서드를 그대로 target 으로 포워딩
+async function forwardFetch(targetUrl, postBody, extraHeaders) {
+  var proxyUrl = BRIDGE + '/api/forward?url=' + encodeURIComponent(targetUrl);
+
+  if (!postBody) {
+    return await fetch(proxyUrl, { method: 'GET' });
+  }
+
+  var headers = Object.assign(
+    { 'Content-Type': 'application/json' },
+    extraHeaders || {}
+  );
+  return await fetch(proxyUrl, {
+    method : 'POST',
+    headers: headers,
+    body   : postBody,
+  });
+}
+
+// ── 텔레그램 sendMessage ──────────────────────────────────────────
+// POST https://api.telegram.org/bot{TOKEN}/sendMessage
+// Body: { chat_id, text, parse_mode }
+//
+// 카카오와 달리 토큰 갱신이 없어서 딱 한 번만 호출하면 끝.
+async function sendTelegramMessage() {
+  var targetUrl = 'https://api.telegram.org/bot' + BOT_TOKEN + '/sendMessage';
+
+  var payload = JSON.stringify({
+    chat_id    : CHAT_ID,
+    text       : MESSAGE,
+    parse_mode : 'HTML',   // <b>굵게</b>, <i>기울임</i>, <code>코드</code> 지원
+  });
+
+  log('메시지 발송 중... (api.telegram.org)', 'info');
+  log('chat_id: ' + CHAT_ID, 'info');
+  log('내용: ' + MESSAGE.substring(0, 80), 'info');
+
+  var resp;
+  try {
+    resp = await forwardFetch(targetUrl, payload);
+  } catch(e) {
+    throw new Error('네트워크 오류: ' + e.message);
+  }
+
+  log('HTTP ' + resp.status, resp.ok ? 'info' : 'warn');
+
+  var text = await resp.text();
+  log('응답: ' + text.substring(0, 150), 'info');
+
+  var data;
+  try { data = JSON.parse(text); } catch(e) {
+    throw new Error('응답 JSON 파싱 실패: ' + text.substring(0, 80));
+  }
+
+  // 텔레그램 정상 응답: { ok: true, result: { message_id: ... } }
+  if (!data.ok) {
+    throw new Error('발송 실패: ' + (data.description || JSON.stringify(data)));
+  }
+
+  log('텔레그램 발송 완료 ✓ (message_id=' + data.result.message_id + ')', 'ok');
+  return data.result;
+}
+
+// ── 메인 ─────────────────────────────────────────────────────────
+async function main() {
+  try {
+    log('bridge='   + BRIDGE, 'info');
+    log('botToken=' + BOT_TOKEN.substring(0, 10) + '***', 'info');
+    log('chatId='   + CHAT_ID, 'info');
+
+    window.__progress = 'send';
+    var result = await sendTelegramMessage();
+
+    window.__result = {
+      ok        : true,
+      message   : MESSAGE,
+      messageId : result.message_id,
+      timestamp : Date.now(),
+      logs      : window.__logs,
+    };
+    log('완료 ✓', 'ok');
+
+  } catch(e) {
+    log('오류: ' + e.message, 'err');
+    window.__result = {
+      ok       : false,
+      error    : e.message,
+      progress : window.__progress || 'init',
+      timestamp: Date.now(),
+      logs     : window.__logs,
+    };
+  }
+}
+
+main().catch(function(e) {
+  window.__result = {
+    ok       : false,
+    error    : String(e && e.message || e),
+    progress : window.__progress || 'init',
+    timestamp: Date.now(),
+    logs     : window.__logs,
+  };
+});
+</script>
+</body>
+</html>
