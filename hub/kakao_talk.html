@@ -1,0 +1,243 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<title>Kakao Talk Bridge</title>
+<style>
+  :root { --bg:#0d1117; --surface:#161b22; --border:#30363d; --text:#e6edf3;
+          --muted:#8b949e; --accent:#58a6ff; --ok:#3fb950; --err:#f85149; --warn:#d29922; }
+  * { box-sizing:border-box; margin:0; }
+  html,body { background:var(--bg); color:var(--text); font-family:monospace;
+              font-size:13px; padding:16px; }
+  h1 { font-size:14px; color:var(--accent); margin-bottom:12px; }
+  .log-box { background:var(--surface); border:1px solid var(--border); border-radius:8px;
+             padding:12px; max-height:300px; overflow-y:auto; }
+  .log-line { padding:1px 0; white-space:pre-wrap; word-break:break-all; }
+  .ok   { color:var(--ok); }
+  .err  { color:var(--err); }
+  .warn { color:var(--warn); }
+  .info { color:var(--muted); }
+</style>
+</head>
+<body>
+<h1>📨 Kakao Talk Bridge</h1>
+<div class="log-box" id="logbox"></div>
+
+<script>
+// ── URL 파라미터 파서 ──────────────────
+function getRawQueryParam(name) {
+  var search = window.location.search.replace(/^\?/, '');
+  var pairs  = search.split('&');
+  for (var i = 0; i < pairs.length; i++) {
+    var eq = pairs[i].indexOf('=');
+    if (eq === -1) continue;
+    var key = decodeURIComponent(pairs[i].substring(0, eq));
+    if (key === name) return decodeURIComponent(pairs[i].substring(eq + 1));
+  }
+  return null;
+}
+
+// ── 파라미터 ─────────────────────────────────────────────────────
+// bridge      : SmartWeb 브리지 서버 주소 (필수)
+// restApiKey  : 카카오 REST API 키 (필수)
+// refreshToken: 카카오 리프레시 토큰 (필수)
+// message     : 전송할 메시지 내용 (선택, 기본값 있음)
+var BRIDGE        = getRawQueryParam('bridge')       || '';
+var REST_API_KEY  = getRawQueryParam('restApiKey')   || '';
+var REFRESH_TOKEN = getRawQueryParam('refreshToken') || '';
+var MESSAGE       = getRawQueryParam('message')      || 'SmartThings 알림';
+
+window.__progress = 'init';
+window.__logs     = [];
+
+if (!BRIDGE)        { window.__result = { ok:false, error:'bridge 파라미터 필수',       timestamp:Date.now() }; throw new Error('bridge 없음'); }
+if (!REST_API_KEY)  { window.__result = { ok:false, error:'restApiKey 파라미터 필수',   timestamp:Date.now() }; throw new Error('restApiKey 없음'); }
+if (!REFRESH_TOKEN) { window.__result = { ok:false, error:'refreshToken 파라미터 필수', timestamp:Date.now() }; throw new Error('refreshToken 없음'); }
+
+// ── 로그 (weather_map.html 과 동일) ──────────────────────────────
+var _logbox = document.getElementById('logbox');
+function log(msg, cls) {
+  var line = '[' + new Date().toLocaleTimeString('ko-KR') + '] ' + msg;
+  window.__logs.push((cls || 'info') + ': ' + line);
+  var d = document.createElement('div');
+  d.className = 'log-line ' + (cls || 'info');
+  d.textContent = line;
+  _logbox.appendChild(d);
+  _logbox.scrollTop = _logbox.scrollHeight;
+}
+
+// ── 브리지 /api/forward 경유 fetch ───────────────────────────────
+// weather_map.html 의 forwardFetch 와 완전히 동일한 구조.
+// GET: forwardFetch(url)
+// POST: forwardFetch(url, body, extraHeaders)
+//   → /api/forward?url=...&method=POST&header_XXX=YYY 로 전달
+//
+// ※ 브리지의 /api/forward 가 GET 전용인 경우를 대비해
+//    POST 바디와 헤더를 쿼리스트링으로 실어서 보낸다.
+//    (브리지가 내부적으로 지정된 메서드로 target에 재전송)
+//
+// 실제 브리지 구현에 따라 아래 두 가지 중 하나를 선택:
+//   A) 브리지가 method/body/header 쿼리스트링 지원 → 현재 구현 그대로 사용
+//   B) 브리지가 수신한 HTTP 메서드를 그대로 포워딩 → fetch 메서드를 POST 로 변경
+//
+// 기본값은 A 방식(쿼리스트링으로 POST 정보 전달)
+async function forwardFetch(targetUrl, postBody, extraHeaders) {
+  var proxyUrl = BRIDGE + '/api/forward?url=' + encodeURIComponent(targetUrl);
+
+  if (!postBody) {
+    // GET 포워딩 — weather_map.html 과 동일
+    return await fetch(proxyUrl, { method: 'GET' });
+  }
+
+  // POST 포워딩:
+  // 브리지 서버가 받은 HTTP 요청을 그대로 target으로 포워딩하는 경우
+  // fetch 를 POST 로 보내면 브리지가 POST 로 카카오 서버에 전달해 줌.
+  var headers = Object.assign(
+    { 'Content-Type': 'application/x-www-form-urlencoded' },
+    extraHeaders || {}
+  );
+  return await fetch(proxyUrl, {
+    method : 'POST',
+    headers: headers,
+    body   : postBody,
+  });
+}
+
+// ── 1단계: 리프레시 토큰 → 액세스 토큰 갱신 ─────────────────────
+// POST https://kauth.kakao.com/oauth/token
+// Content-Type: application/x-www-form-urlencoded
+async function refreshAccessToken() {
+  var targetUrl = 'https://kauth.kakao.com/oauth/token';
+  var body = 'grant_type=refresh_token'
+           + '&client_id='     + encodeURIComponent(REST_API_KEY)
+           + '&refresh_token=' + encodeURIComponent(REFRESH_TOKEN);
+
+  log('액세스 토큰 갱신 중... (kauth.kakao.com)', 'info');
+
+  var resp;
+  try {
+    resp = await forwardFetch(targetUrl, body);
+  } catch(e) {
+    throw new Error('토큰 갱신 네트워크 오류: ' + e.message);
+  }
+
+  log('토큰 갱신 HTTP ' + resp.status, resp.ok ? 'info' : 'warn');
+
+  var text = await resp.text();
+  log('토큰 응답: ' + text.substring(0, 120), 'info');
+
+  var data;
+  try { data = JSON.parse(text); } catch(e) { throw new Error('토큰 응답 JSON 파싱 실패: ' + text.substring(0, 80)); }
+
+  if (data.error) throw new Error('토큰 갱신 실패: ' + data.error + ' — ' + (data.error_description || ''));
+  if (!data.access_token) throw new Error('access_token 없음: ' + text.substring(0, 80));
+
+  log('액세스 토큰 획득 완료 (' + data.token_type + ', expires_in=' + data.expires_in + 's)', 'ok');
+
+  // 카카오는 리프레시 토큰이 1달 미만 남으면 새 리프레시 토큰도 함께 반환함.
+  // 여기서는 result 에 담아두어 init.lua 가 필요 시 저장할 수 있도록 함.
+  return {
+    accessToken : data.access_token,
+    newRefreshToken: data.refresh_token || null,  // 갱신된 경우만 존재
+  };
+}
+
+// ── 2단계: 나에게 보내기 ─────────────────────────────────────────
+// POST https://kapi.kakao.com/v2/api/talk/memo/default/send
+// Authorization: Bearer {ACCESS_TOKEN}
+// Content-Type: application/x-www-form-urlencoded
+// body: template_object={...}
+async function sendKakaoMessage(accessToken) {
+  var targetUrl = 'https://kapi.kakao.com/v2/api/talk/memo/default/send';
+
+  // 텍스트 템플릿 — 최대 200자
+  var template = JSON.stringify({
+    object_type : 'text',
+    text        : MESSAGE.substring(0, 200),
+    link        : { web_url: '', mobile_web_url: '' },
+    button_title: '확인',
+  });
+
+  var body = 'template_object=' + encodeURIComponent(template);
+
+  log('메시지 발송 중... (kapi.kakao.com)', 'info');
+  log('내용: ' + MESSAGE.substring(0, 60), 'info');
+
+  var resp;
+  try {
+    resp = await forwardFetch(
+      targetUrl,
+      body,
+      { 'Authorization': 'Bearer ' + accessToken }
+    );
+  } catch(e) {
+    throw new Error('메시지 발송 네트워크 오류: ' + e.message);
+  }
+
+  log('발송 HTTP ' + resp.status, resp.ok ? 'info' : 'warn');
+
+  var text = await resp.text();
+  log('발송 응답: ' + text.substring(0, 120), 'info');
+
+  var data;
+  try { data = JSON.parse(text); } catch(e) { throw new Error('발송 응답 JSON 파싱 실패'); }
+
+  // 카카오 나에게 보내기 성공 시 { result_code: 0 }
+  if (data.result_code !== 0) {
+    throw new Error('발송 실패 result_code=' + data.result_code
+      + (data.msg ? ' msg=' + data.msg : ''));
+  }
+
+  log('카카오톡 발송 완료 ✓', 'ok');
+  return data;
+}
+
+// ── 메인 ─────────────────────────────────────────────────────────
+async function main() {
+  try {
+    log('bridge='      + BRIDGE, 'info');
+    log('restApiKey='  + REST_API_KEY.substring(0, 8) + '***', 'info');
+    log('refreshToken='+ REFRESH_TOKEN.substring(0, 8) + '***', 'info');
+    log('message='     + MESSAGE.substring(0, 60), 'info');
+
+    // 1단계: 액세스 토큰 갱신
+    window.__progress = 'refresh';
+    var tokenResult = await refreshAccessToken();
+
+    // 2단계: 메시지 발송
+    window.__progress = 'send';
+    await sendKakaoMessage(tokenResult.accessToken);
+
+    window.__result = {
+      ok             : true,
+      message        : MESSAGE,
+      newRefreshToken: tokenResult.newRefreshToken,  // null 이면 갱신 불필요
+      timestamp      : Date.now(),
+      logs           : window.__logs,
+    };
+    log('완료 ✓', 'ok');
+
+  } catch(e) {
+    log('오류: ' + e.message, 'err');
+    window.__result = {
+      ok       : false,
+      error    : e.message,
+      progress : window.__progress || 'init',
+      timestamp: Date.now(),
+      logs     : window.__logs,
+    };
+  }
+}
+
+main().catch(function(e) {
+  window.__result = {
+    ok       : false,
+    error    : String(e && e.message || e),
+    progress : window.__progress || 'init',
+    timestamp: Date.now(),
+    logs     : window.__logs,
+  };
+});
+</script>
+</body>
+</html>
