@@ -1,0 +1,231 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
+<title>카카오 토큰 발급</title>
+<style>
+  :root { --bg:#0d1117; --surface:#161b22; --border:#30363d; --text:#e6edf3;
+          --muted:#8b949e; --accent:#58a6ff; --ok:#3fb950; --err:#f85149; }
+  * { box-sizing:border-box; margin:0; padding:0; }
+  html, body { width:100%; min-height:100vh; background:var(--bg); color:var(--text);
+               font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif; }
+  body { padding:20px 16px 32px; }
+  h1   { font-size:22px; color:var(--accent); margin-bottom:6px; }
+  p.step { color:var(--muted); font-size:15px; margin:22px 0 8px; font-weight:700; }
+  p.hint { color:var(--muted); font-size:13px; line-height:1.6; }
+  p.hint code { background:var(--surface); border:1px solid var(--border);
+                border-radius:4px; padding:1px 5px; font-size:12px; word-break:break-all; }
+  a.login-btn { display:block; width:100%; text-align:center;
+                background:#fee500; color:#181600; font-weight:700; font-size:17px;
+                padding:16px; border-radius:12px; text-decoration:none; margin-top:10px; }
+  a.login-btn.disabled { opacity:.4; pointer-events:none; }
+  input[type=text] { display:block; width:100%; background:var(--surface); color:var(--text);
+        border:1px solid var(--border); border-radius:10px; padding:14px 12px;
+        font-size:15px; margin-top:10px; outline:none; }
+  input[type=text]:focus { border-color:var(--accent); }
+  button.submit-btn { display:block; width:100%; margin-top:14px; background:var(--accent);
+           color:#0d1117; font-weight:700; font-size:17px; border:none;
+           border-radius:12px; padding:16px; cursor:pointer; }
+  button.submit-btn:disabled { opacity:.4; cursor:default; }
+  .status-box { margin-top:28px; padding:16px; background:var(--surface);
+                border:1px solid var(--border); border-radius:12px; }
+  .status-box p { font-size:15px; line-height:1.7; }
+  .ok   { color:var(--ok); }
+  .err  { color:var(--err); }
+  .info { color:var(--muted); font-size:13px; }
+  .spinner { display:inline-block; width:14px; height:14px; border:2px solid var(--muted);
+             border-top-color:var(--accent); border-radius:50%;
+             animation:spin .8s linear infinite; vertical-align:middle; margin-right:6px; }
+  @keyframes spin { to { transform:rotate(360deg); } }
+  #cfg-warn { display:none; margin-top:16px; padding:12px 14px;
+              background:#2d1b00; border:1px solid #7a4700; border-radius:10px;
+              color:#e3a000; font-size:13px; line-height:1.6; }
+</style>
+</head>
+<body>
+<h1>🔑 카카오톡 토큰 발급</h1>
+
+<div id="cfg-warn"></div>
+<div id="main-ui">
+  <p class="step">① 카카오 로그인</p>
+  <a id="login-btn" class="login-btn disabled" href="#">카카오로 로그인</a>
+
+  <p class="step">② 로그인 완료 후 자동 처리</p>
+  <p class="hint">
+    로그인 버튼을 누르면 카카오 인증 페이지로 이동합니다.<br>
+    동의 후 이 페이지로 자동으로 돌아와 토큰을 저장합니다.<br>
+    자동으로 돌아오지 않는 경우 아래에 리다이렉트 주소를 붙여넣으세요.
+  </p>
+  <input type="text" id="manual-code" placeholder="https://clipman.github.io/...?code=... (자동처리 실패 시)">
+  <button class="submit-btn" id="submit-btn" disabled>토큰 저장</button>
+</div>
+
+<div class="status-box" id="status-box" style="display:none"></div>
+
+<script>
+// ── URL 파라미터 파서 ─────────────────────────────────────────────
+function getParam(name) {
+  var search = location.search.replace(/^\?/, '');
+  for (var pair of search.split('&')) {
+    var eq = pair.indexOf('=');
+    if (eq === -1) continue;
+    if (decodeURIComponent(pair.substring(0, eq)) === name)
+      return decodeURIComponent(pair.substring(eq + 1));
+  }
+  return '';
+}
+
+// ── 파라미터 ─────────────────────────────────────────────────────
+// bridge      : 브리지 서버 주소 (필수)
+// restApiKey  : 카카오 REST API 키 (필수)
+// callbackUrl : 허브 콜백 엔드포인트 (필수)  예) http://192.168.x.x:PORT/kakao/save
+var BRIDGE       = getParam('bridge');
+var REST_API_KEY = getParam('restApiKey');
+var CALLBACK_URL = getParam('callbackUrl');
+
+// 카카오 Redirect URI = 이 페이지 자신 (쿼리스트링 제외)
+var REDIRECT_URI = location.origin + location.pathname;
+
+// ── 설정 검증 ────────────────────────────────────────────────────
+var cfgWarn = document.getElementById('cfg-warn');
+var missing = [];
+if (!BRIDGE)       missing.push('bridge');
+if (!REST_API_KEY) missing.push('restApiKey');
+if (!CALLBACK_URL) missing.push('callbackUrl');
+if (missing.length) {
+  cfgWarn.style.display = 'block';
+  cfgWarn.innerHTML = '⚠️ 필수 파라미터가 없습니다: <b>' + missing.join(', ') + '</b><br>'
+    + 'SmartThings 앱의 토큰 발급 링크를 통해 접근하세요.';
+}
+
+// ── 카카오 로그인 URL 구성 ────────────────────────────────────────
+var authorizeUrl = 'https://kauth.kakao.com/oauth/authorize'
+  + '?client_id='     + encodeURIComponent(REST_API_KEY)
+  + '&redirect_uri='  + encodeURIComponent(REDIRECT_URI)
+  + '&response_type=code'
+  + '&scope=talk_message';
+
+var loginBtn  = document.getElementById('login-btn');
+var submitBtn = document.getElementById('submit-btn');
+var statusBox = document.getElementById('status-box');
+var manualInput = document.getElementById('manual-code');
+
+if (!missing.length) {
+  loginBtn.href = authorizeUrl;
+  loginBtn.classList.remove('disabled');
+  submitBtn.disabled = false;
+}
+
+// ── 상태 표시 헬퍼 ───────────────────────────────────────────────
+function showStatus(html) {
+  statusBox.style.display = 'block';
+  statusBox.innerHTML = html;
+}
+function statusLine(cls, msg) {
+  return "<p class='" + cls + "'>" + msg + "</p>";
+}
+
+// ── code 추출 (URL 또는 입력값에서) ──────────────────────────────
+function extractCode(raw) {
+  raw = (raw || '').trim();
+  var m = raw.match(/[?&]code=([^&\s]+)/);
+  if (m) return decodeURIComponent(m[1]);
+  m = raw.match(/^code=([^&\s]+)/);
+  if (m) return decodeURIComponent(m[1]);
+  return raw;
+}
+
+// ── 브리지 /api/forward 경유 POST ────────────────────────────────
+async function forwardPost(targetUrl, body, extraHeaders) {
+  var proxyUrl = BRIDGE.replace(/\/+$/, '') + '/api/forward?url=' + encodeURIComponent(targetUrl);
+  var headers  = Object.assign({ 'Content-Type': 'application/x-www-form-urlencoded' }, extraHeaders || {});
+  var resp = await fetch(proxyUrl, { method:'POST', headers:headers, body:body });
+  return resp;
+}
+
+// ── code → token 교환 ────────────────────────────────────────────
+async function exchangeCode(code) {
+  var targetUrl = 'https://kauth.kakao.com/oauth/token';
+  var body = 'grant_type=authorization_code'
+    + '&client_id='    + encodeURIComponent(REST_API_KEY)
+    + '&redirect_uri=' + encodeURIComponent(REDIRECT_URI)
+    + '&code='         + encodeURIComponent(code);
+
+  var resp = await forwardPost(targetUrl, body);
+  var text = await resp.text();
+  var data;
+  try { data = JSON.parse(text); } catch(e) { throw new Error('응답 파싱 실패: ' + text.substring(0, 80)); }
+  if (data.error) throw new Error(data.error + ': ' + (data.error_description || ''));
+  if (!data.access_token) throw new Error('access_token 없음');
+  return data;  // { access_token, refresh_token, expires_in, refresh_token_expires_in, ... }
+}
+
+// ── 허브 콜백으로 토큰 저장 ──────────────────────────────────────
+async function saveToHub(refreshToken, expiresIn, refreshTokenExpiresIn) {
+  var body = 'refresh_token='          + encodeURIComponent(refreshToken)
+    + '&expires_in='                   + encodeURIComponent(expiresIn || '')
+    + '&refresh_token_expires_in='     + encodeURIComponent(refreshTokenExpiresIn || '');
+
+  // callbackUrl 은 허브 로컬 IP → 브리지가 같은 네트워크이므로 /api/forward 경유
+  var resp = await forwardPost(CALLBACK_URL, body);
+  if (!resp.ok) throw new Error('허브 저장 실패 HTTP ' + resp.status);
+}
+
+// ── 메인 처리 ────────────────────────────────────────────────────
+async function processCode(code) {
+  document.getElementById('main-ui').style.display = 'none';
+  showStatus(
+    "<p><span class='spinner'></span> <span style='color:var(--accent)'>토큰 교환 중...</span></p>"
+    + statusLine('info', '코드: ' + code.substring(0, 8) + '***')
+  );
+
+  try {
+    // 1단계: code → token
+    var data = await exchangeCode(code);
+    showStatus(
+      "<p><span class='spinner'></span> <span style='color:var(--accent)'>허브에 저장 중...</span></p>"
+      + statusLine('ok', '✅ 토큰 교환 완료 (expires_in=' + data.expires_in + 's)')
+    );
+
+    // 2단계: 허브 콜백으로 저장
+    await saveToHub(data.refresh_token, data.expires_in, data.refresh_token_expires_in);
+
+    showStatus(
+      statusLine('ok', '✅ 토큰 발급 및 저장 완료!')
+      + "<p class='info' style='margin-top:10px'>이 창은 닫아도 됩니다.</p>"
+    );
+  } catch(e) {
+    showStatus(
+      statusLine('err', '❌ ' + e.message)
+      + "<p class='info' style='margin-top:10px'>"
+      + "<a href='" + location.href.split('?')[0] + "?" + location.search.replace(/^\?/,'') + "' "
+      + "style='color:var(--accent)'>← 다시 시도</a></p>"
+    );
+    // 실패 시 UI 다시 표시
+    document.getElementById('main-ui').style.display = 'block';
+  }
+}
+
+// ── 페이지 로드 시 code 자동 감지 ────────────────────────────────
+window.addEventListener('DOMContentLoaded', function() {
+  if (missing.length) return;
+
+  var code = getParam('code');
+  if (code) {
+    // 카카오가 리다이렉트한 경우 — 자동 처리
+    processCode(code);
+    return;
+  }
+
+  // 수동 입력 처리
+  submitBtn.addEventListener('click', function() {
+    var raw  = manualInput.value.trim();
+    var code = extractCode(raw);
+    if (!code) { showStatus(statusLine('err', '❌ code 값을 확인할 수 없습니다.')); return; }
+    processCode(code);
+  });
+});
+</script>
+</body>
+</html>
